@@ -177,3 +177,30 @@ DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
 CREATE TRIGGER on_auth_user_created
   AFTER INSERT ON auth.users
   FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
+
+-- 12. Helper Function to check if a patient exists by phone or email
+CREATE OR REPLACE FUNCTION public.check_patient_exists(p_phone TEXT DEFAULT NULL, p_email TEXT DEFAULT NULL)
+RETURNS BOOLEAN AS $$
+BEGIN
+  IF p_phone IS NOT NULL AND p_phone <> '' THEN
+    IF EXISTS (
+      SELECT 1 FROM public.patients 
+      WHERE phone ILIKE '%' || right(regexp_replace(p_phone, '\D', '', 'g'), 10) || '%'
+    ) THEN
+      RETURN TRUE;
+    END IF;
+  END IF;
+  
+  IF p_email IS NOT NULL AND p_email <> '' THEN
+    IF EXISTS (
+      SELECT 1 FROM public.patients 
+      WHERE lower(email) = lower(trim(p_email))
+    ) THEN
+      RETURN TRUE;
+    END IF;
+  END IF;
+  
+  RETURN FALSE;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Phone, Mail, Lock, ShieldCheck, ArrowRight, Activity, Sparkles } from 'lucide-react';
+import { Phone, Mail, Lock, ShieldCheck, ArrowRight, Activity, AlertCircle, UserPlus, Sparkles } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 
@@ -11,15 +11,23 @@ export default function Login() {
   const [password, setPassword] = useState('');
   const [usePassword, setUsePassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
 
   const { loginWithPhone, loginWithEmail, loginWithPassword, isSupabaseConfigured } = useAuth();
-  const { showSuccess, showError, showInfo } = useToast();
+  const { showSuccess, showError } = useToast();
   const navigate = useNavigate();
+
+  const clearError = () => {
+    if (errorMessage) setErrorMessage('');
+  };
 
   const handlePhoneSubmit = async (e) => {
     e.preventDefault();
+    setErrorMessage('');
     if (!phone || phone.length < 10) {
-      showError('Please enter a valid 10-digit mobile number.');
+      const msg = 'Please enter a valid 10-digit mobile number.';
+      setErrorMessage(msg);
+      showError(msg);
       return;
     }
 
@@ -29,7 +37,9 @@ export default function Login() {
       showSuccess(`OTP sent to +91 ${phone}`);
       navigate('/verify-otp', { state: { type: 'phone', target: phone } });
     } catch (err) {
-      showError(err.message || 'Failed to send OTP. Please try again.');
+      const msg = err.message || 'Failed to authenticate. Please try again.';
+      setErrorMessage(msg);
+      showError(msg);
     } finally {
       setLoading(false);
     }
@@ -37,8 +47,11 @@ export default function Login() {
 
   const handleEmailSubmit = async (e) => {
     e.preventDefault();
+    setErrorMessage('');
     if (!email || !email.includes('@')) {
-      showError('Please enter a valid email address.');
+      const msg = 'Please enter a valid email address.';
+      setErrorMessage(msg);
+      showError(msg);
       return;
     }
 
@@ -46,7 +59,9 @@ export default function Login() {
     try {
       if (usePassword) {
         if (!password) {
-          showError('Please enter your account password.');
+          const msg = 'Please enter your account password.';
+          setErrorMessage(msg);
+          showError(msg);
           setLoading(false);
           return;
         }
@@ -59,7 +74,9 @@ export default function Login() {
         navigate('/verify-otp', { state: { type: 'email', target: email } });
       }
     } catch (err) {
-      showError(err.message || 'Authentication failed. Please check credentials.');
+      const msg = err.message || 'Authentication failed. Please check credentials.';
+      setErrorMessage(msg);
+      showError(msg);
     } finally {
       setLoading(false);
     }
@@ -97,7 +114,27 @@ export default function Login() {
             <div className="mb-6 p-3 bg-teal-50 border border-teal-200 rounded-xl text-xs text-teal-900 flex items-start gap-2">
               <Sparkles className="w-4 h-4 text-[#0F766E] shrink-0 mt-0.5" />
               <div>
-                <span className="font-semibold">Interactive Demo Mode:</span> Use any phone number or email to receive a simulated 6-digit OTP (<code className="font-mono font-bold text-[#0F766E]">123456</code>).
+                <span className="font-semibold">Demo Sandbox:</span> Seeded Demo Patient: <code className="font-mono font-bold text-[#0F766E]">9876543210</code> / <code className="font-mono font-bold text-[#0F766E]">123456</code>.
+              </div>
+            </div>
+          )}
+
+          {/* Inline Error Banner */}
+          {errorMessage && (
+            <div className="mb-5 p-3.5 bg-red-50 border border-red-200 rounded-xl text-xs text-red-900 flex items-start gap-2.5 animate-fadeIn">
+              <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <p className="font-medium leading-relaxed">{errorMessage}</p>
+                {errorMessage.toLowerCase().includes('register') && (
+                  <Link
+                    to="/register"
+                    className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg font-semibold text-[11px] shadow-xs transition-all"
+                  >
+                    <UserPlus className="w-3.5 h-3.5" />
+                    <span>Register New Patient Account</span>
+                    <ArrowRight className="w-3 h-3" />
+                  </Link>
+                )}
               </div>
             </div>
           )}
@@ -106,7 +143,10 @@ export default function Login() {
           <div className="flex p-1 bg-slate-100 rounded-xl mb-6">
             <button
               type="button"
-              onClick={() => setAuthMethod('phone')}
+              onClick={() => {
+                setAuthMethod('phone');
+                setErrorMessage('');
+              }}
               className={`flex-1 py-2.5 text-xs font-semibold rounded-lg transition-all flex items-center justify-center gap-2 ${
                 authMethod === 'phone'
                   ? 'bg-white text-[#0F766E] shadow-xs'
@@ -118,7 +158,10 @@ export default function Login() {
             </button>
             <button
               type="button"
-              onClick={() => setAuthMethod('email')}
+              onClick={() => {
+                setAuthMethod('email');
+                setErrorMessage('');
+              }}
               className={`flex-1 py-2.5 text-xs font-semibold rounded-lg transition-all flex items-center justify-center gap-2 ${
                 authMethod === 'email'
                   ? 'bg-white text-[#0F766E] shadow-xs'
@@ -151,7 +194,10 @@ export default function Login() {
                     placeholder="Enter 10-digit mobile number"
                     className="input-field flex-1 text-sm font-medium"
                     value={phone}
-                    onChange={(e) => setPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
+                    onChange={(e) => {
+                      clearError();
+                      setPhone(e.target.value.replace(/\D/g, '').slice(0, 10));
+                    }}
                     required
                   />
                 </div>
@@ -189,7 +235,10 @@ export default function Login() {
                   placeholder="patient@example.com"
                   className="input-field"
                   value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  onChange={(e) => {
+                    clearError();
+                    setEmail(e.target.value);
+                  }}
                   required
                 />
               </div>
@@ -202,7 +251,10 @@ export default function Login() {
                     </label>
                     <button
                       type="button"
-                      onClick={() => setUsePassword(false)}
+                      onClick={() => {
+                        clearError();
+                        setUsePassword(false);
+                      }}
                       className="text-xs text-[#0F766E] hover:underline"
                     >
                       Login with OTP instead
@@ -213,7 +265,10 @@ export default function Login() {
                     placeholder="Enter your password"
                     className="input-field"
                     value={password}
-                    onChange={(e) => setPassword(e.target.value)}
+                    onChange={(e) => {
+                      clearError();
+                      setPassword(e.target.value);
+                    }}
                     required
                   />
                 </div>
@@ -222,7 +277,10 @@ export default function Login() {
                   <span className="text-[#64748B]">We will send a verification code.</span>
                   <button
                     type="button"
-                    onClick={() => setUsePassword(true)}
+                    onClick={() => {
+                      clearError();
+                      setUsePassword(true);
+                    }}
                     className="text-[#0F766E] font-medium hover:underline"
                   >
                     Use password instead

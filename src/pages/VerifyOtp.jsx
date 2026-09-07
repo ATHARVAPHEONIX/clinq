@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useLocation, useNavigate, Link } from 'react-router-dom';
-import { ShieldCheck, ArrowLeft, RefreshCw, CheckCircle2, Sparkles } from 'lucide-react';
+import { ShieldCheck, ArrowLeft, RefreshCw, CheckCircle2, AlertCircle, UserPlus, Sparkles } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 
@@ -13,10 +13,11 @@ export default function VerifyOtp() {
   const [timer, setTimer] = useState(45);
   const [canResend, setCanResend] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
 
   const inputRefs = useRef([]);
   const { verifyPhoneOtp, verifyEmailOtp, loginWithPhone, loginWithEmail, isSupabaseConfigured } = useAuth();
-  const { showSuccess, showError, showInfo } = useToast();
+  const { showSuccess, showError } = useToast();
 
   useEffect(() => {
     let interval = null;
@@ -41,6 +42,7 @@ export default function VerifyOtp() {
 
   const handleOtpChange = (index, value) => {
     if (isNaN(value)) return;
+    setErrorMessage('');
     const newOtp = [...otp];
     newOtp[index] = value.slice(-1);
     setOtp(newOtp);
@@ -59,6 +61,7 @@ export default function VerifyOtp() {
 
   const handlePaste = (e) => {
     e.preventDefault();
+    setErrorMessage('');
     const pastedData = e.clipboardData.getData('text').slice(0, 6).split('');
     const newOtp = [...otp];
     pastedData.forEach((char, i) => {
@@ -70,9 +73,12 @@ export default function VerifyOtp() {
 
   const handleVerify = async (e) => {
     e?.preventDefault();
+    setErrorMessage('');
     const fullOtp = otp.join('');
     if (fullOtp.length !== 6) {
-      showError('Please enter all 6 digits of the OTP code.');
+      const msg = 'Please enter all 6 digits of the OTP code.';
+      setErrorMessage(msg);
+      showError(msg);
       return;
     }
 
@@ -86,7 +92,9 @@ export default function VerifyOtp() {
       showSuccess('Verification successful! Welcome to CareTrack.');
       navigate('/dashboard', { replace: true });
     } catch (err) {
-      showError(err.message || 'Invalid or expired OTP. Please try again.');
+      const msg = err.message || 'Invalid or expired OTP. Please try again.';
+      setErrorMessage(msg);
+      showError(msg);
     } finally {
       setLoading(false);
     }
@@ -94,6 +102,7 @@ export default function VerifyOtp() {
 
   const handleResend = async () => {
     if (!canResend) return;
+    setErrorMessage('');
     setLoading(true);
     try {
       if (type === 'phone') {
@@ -107,7 +116,9 @@ export default function VerifyOtp() {
       setOtp(['', '', '', '', '', '']);
       inputRefs.current[0]?.focus();
     } catch (err) {
-      showError('Failed to resend OTP. Please try again.');
+      const msg = err.message || 'Failed to resend OTP. Please try again.';
+      setErrorMessage(msg);
+      showError(msg);
     } finally {
       setLoading(false);
     }
@@ -137,6 +148,25 @@ export default function VerifyOtp() {
               <Sparkles className="w-4 h-4 text-[#0F766E] shrink-0 mt-0.5" />
               <div>
                 <span className="font-semibold">Demo Sandbox:</span> Enter <code className="font-bold text-[#0F766E]">123456</code> to verify instantly.
+              </div>
+            </div>
+          )}
+
+          {/* Inline Error Banner */}
+          {errorMessage && (
+            <div className="mb-5 p-3.5 bg-red-50 border border-red-200 rounded-xl text-xs text-red-900 flex items-start gap-2.5 animate-fadeIn">
+              <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <p className="font-medium leading-relaxed">{errorMessage}</p>
+                {errorMessage.toLowerCase().includes('register') && (
+                  <Link
+                    to="/register"
+                    className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg font-semibold text-[11px] shadow-xs transition-all"
+                  >
+                    <UserPlus className="w-3.5 h-3.5" />
+                    <span>Go to Registration</span>
+                  </Link>
+                )}
               </div>
             </div>
           )}
