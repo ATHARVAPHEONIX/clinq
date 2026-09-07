@@ -1,19 +1,22 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
   Lock, 
   ShieldCheck, 
   Bell, 
-  Eye, 
+  Mail,
+  Smartphone,
   LogOut, 
   Trash2, 
-  Smartphone, 
   KeyRound, 
   CheckCircle2,
-  AlertTriangle
+  AlertTriangle,
+  Save,
+  MessageSquare
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
+import { api } from '../services/api';
 
 export default function Settings() {
   const { patient, user, logout } = useAuth();
@@ -28,15 +31,40 @@ export default function Settings() {
 
   const [notifications, setNotifications] = useState({
     emailAlerts: true,
+    emailReportReady: true,
+    emailPrescriptionRefills: true,
     smsAlerts: true,
-    appointmentReminders: true,
-    reportReady: true
+    appointmentReminders: true
   });
 
   const [twoFactor, setTwoFactor] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [savingNotifications, setSavingNotifications] = useState(false);
 
-  const handlePasswordChange = (e) => {
+  // Load saved preferences
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(`caretrack_notif_${patient?.id || 'guest'}`);
+      if (saved) {
+        setNotifications(JSON.parse(saved));
+      }
+    } catch (e) {
+      console.warn('Failed to load notification settings:', e);
+    }
+  }, [patient?.id]);
+
+  const handleNotificationToggle = (key) => {
+    const updated = { ...notifications, [key]: !notifications[key] };
+    setNotifications(updated);
+    try {
+      localStorage.setItem(`caretrack_notif_${patient?.id || 'guest'}`, JSON.stringify(updated));
+    } catch (e) {
+      console.warn('Failed to save settings:', e);
+    }
+    showSuccess('Notification preference updated.');
+  };
+
+  const handlePasswordChange = async (e) => {
     e.preventDefault();
     if (passwordForm.newPassword.length < 6) {
       showError('New password must be at least 6 characters.');
@@ -64,15 +92,132 @@ export default function Settings() {
           <span className="badge badge-teal text-xs">Security & Preferences</span>
         </div>
         <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-[#0B1C30]">
-          Account & Privacy Settings
+          Account & Notification Settings
         </h1>
         <p className="text-xs text-[#64748B] mt-0.5">
-          Manage your login credentials, two-factor authentication, and notifications.
+          Manage your email alerts, SMS reminders, login credentials, and active sessions.
         </p>
       </div>
 
       <div className="space-y-6">
-        {/* Section 1: Change Password */}
+        {/* Section 1: Email & Communication Preferences */}
+        <div className="card p-6 space-y-5">
+          <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+            <div className="flex items-center gap-2">
+              <Mail className="w-4 h-4 text-[#0F766E]" />
+              <h3 className="font-bold text-sm text-[#0B1C30] uppercase tracking-wider">
+                Email & SMS Notifications
+              </h3>
+            </div>
+            <span className="badge badge-teal text-[11px]">
+              {patient?.email || user?.email || 'patient@example.com'}
+            </span>
+          </div>
+
+          <div className="space-y-4 text-xs divide-y divide-slate-100">
+            {/* 1. General Email Summaries */}
+            <div className="flex items-center justify-between pt-2">
+              <div className="space-y-0.5 max-w-lg">
+                <div className="font-semibold text-sm text-[#0B1C30] flex items-center gap-1.5">
+                  <span>General Healthcare Email Summaries</span>
+                </div>
+                <div className="text-[#64748B]">
+                  Receive periodic clinical summaries, general healthcare updates, and account activity via email.
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => handleNotificationToggle('emailAlerts')}
+                className={`w-11 h-6 rounded-full transition-colors relative shrink-0 ml-4 ${
+                  notifications.emailAlerts ? 'bg-[#0F766E]' : 'bg-slate-300'
+                }`}
+              >
+                <div
+                  className={`w-4 h-4 rounded-full bg-white absolute top-1 transition-transform ${
+                    notifications.emailAlerts ? 'right-1' : 'left-1'
+                  }`}
+                />
+              </button>
+            </div>
+
+            {/* 2. Diagnostic Report Email Alerts */}
+            <div className="flex items-center justify-between pt-4">
+              <div className="space-y-0.5 max-w-lg">
+                <div className="font-semibold text-sm text-[#0B1C30]">
+                  New Diagnostic Report Ready Email
+                </div>
+                <div className="text-[#64748B]">
+                  Get an instant email alert with a secure preview link whenever a new lab test, ECG, or X-ray report is uploaded.
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => handleNotificationToggle('emailReportReady')}
+                className={`w-11 h-6 rounded-full transition-colors relative shrink-0 ml-4 ${
+                  notifications.emailReportReady ? 'bg-[#0F766E]' : 'bg-slate-300'
+                }`}
+              >
+                <div
+                  className={`w-4 h-4 rounded-full bg-white absolute top-1 transition-transform ${
+                    notifications.emailReportReady ? 'right-1' : 'left-1'
+                  }`}
+                />
+              </button>
+            </div>
+
+            {/* 3. Prescription Refill Reminders */}
+            <div className="flex items-center justify-between pt-4">
+              <div className="space-y-0.5 max-w-lg">
+                <div className="font-semibold text-sm text-[#0B1C30]">
+                  Prescription & Medication Reminders
+                </div>
+                <div className="text-[#64748B]">
+                  Receive email notifications when your ongoing prescribed medications are nearing their scheduled completion date.
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => handleNotificationToggle('emailPrescriptionRefills')}
+                className={`w-11 h-6 rounded-full transition-colors relative shrink-0 ml-4 ${
+                  notifications.emailPrescriptionRefills ? 'bg-[#0F766E]' : 'bg-slate-300'
+                }`}
+              >
+                <div
+                  className={`w-4 h-4 rounded-full bg-white absolute top-1 transition-transform ${
+                    notifications.emailPrescriptionRefills ? 'right-1' : 'left-1'
+                  }`}
+                />
+              </button>
+            </div>
+
+            {/* 4. Appointment Alerts */}
+            <div className="flex items-center justify-between pt-4">
+              <div className="space-y-0.5 max-w-lg">
+                <div className="font-semibold text-sm text-[#0B1C30]">
+                  Doctor Visit & Appointment Alerts
+                </div>
+                <div className="text-[#64748B]">
+                  Receive email and SMS notifications 24 hours prior to scheduled clinic consultations.
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => handleNotificationToggle('appointmentReminders')}
+                className={`w-11 h-6 rounded-full transition-colors relative shrink-0 ml-4 ${
+                  notifications.appointmentReminders ? 'bg-[#0F766E]' : 'bg-slate-300'
+                }`}
+              >
+                <div
+                  className={`w-4 h-4 rounded-full bg-white absolute top-1 transition-transform ${
+                    notifications.appointmentReminders ? 'right-1' : 'left-1'
+                  }`}
+                />
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Section 2: Change Password */}
         <div className="card p-6 space-y-4">
           <div className="flex items-center gap-2 pb-3 border-b border-slate-100">
             <KeyRound className="w-4 h-4 text-[#0F766E]" />
@@ -125,7 +270,7 @@ export default function Settings() {
           </form>
         </div>
 
-        {/* Section 2: Two-Factor Authentication */}
+        {/* Section 3: Two-Factor Authentication */}
         <div className="card p-6 space-y-4">
           <div className="flex items-center gap-2 pb-3 border-b border-slate-100">
             <ShieldCheck className="w-4 h-4 text-[#0F766E]" />
@@ -144,61 +289,10 @@ export default function Settings() {
                 setTwoFactor(!twoFactor);
                 showSuccess(twoFactor ? '2FA disabled.' : '2FA enabled successfully!');
               }}
-              className={`w-12 h-6 rounded-full transition-colors relative ${twoFactor ? 'bg-[#0F766E]' : 'bg-slate-300'}`}
+              className={`w-11 h-6 rounded-full transition-colors relative ${twoFactor ? 'bg-[#0F766E]' : 'bg-slate-300'}`}
             >
               <div className={`w-4 h-4 rounded-full bg-white absolute top-1 transition-transform ${twoFactor ? 'right-1' : 'left-1'}`} />
             </button>
-          </div>
-        </div>
-
-        {/* Section 3: Notification Preferences */}
-        <div className="card p-6 space-y-4">
-          <div className="flex items-center gap-2 pb-3 border-b border-slate-100">
-            <Bell className="w-4 h-4 text-[#0F766E]" />
-            <h3 className="font-bold text-sm text-[#0B1C30] uppercase tracking-wider">
-              Communication & Alerts
-            </h3>
-          </div>
-
-          <div className="space-y-3 text-xs divide-y divide-slate-100">
-            <div className="flex items-center justify-between pt-2">
-              <div>
-                <div className="font-semibold text-[#0B1C30]">Appointment Reminders</div>
-                <div className="text-[#64748B]">Get SMS and email notifications 24 hours prior to visits.</div>
-              </div>
-              <input
-                type="checkbox"
-                checked={notifications.appointmentReminders}
-                onChange={(e) => setNotifications({ ...notifications, appointmentReminders: e.target.checked })}
-                className="w-4 h-4 accent-[#0F766E]"
-              />
-            </div>
-
-            <div className="flex items-center justify-between pt-3">
-              <div>
-                <div className="font-semibold text-[#0B1C30]">Lab Report Ready Alerts</div>
-                <div className="text-[#64748B]">Instant notification when new diagnostic results are uploaded.</div>
-              </div>
-              <input
-                type="checkbox"
-                checked={notifications.reportReady}
-                onChange={(e) => setNotifications({ ...notifications, reportReady: e.target.checked })}
-                className="w-4 h-4 accent-[#0F766E]"
-              />
-            </div>
-
-            <div className="flex items-center justify-between pt-3">
-              <div>
-                <div className="font-semibold text-[#0B1C30]">Email Summaries</div>
-                <div className="text-[#64748B]">Monthly healthcare summaries and prescription refills.</div>
-              </div>
-              <input
-                type="checkbox"
-                checked={notifications.emailAlerts}
-                onChange={(e) => setNotifications({ ...notifications, emailAlerts: e.target.checked })}
-                className="w-4 h-4 accent-[#0F766E]"
-              />
-            </div>
           </div>
         </div>
 
