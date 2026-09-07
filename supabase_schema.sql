@@ -86,7 +86,8 @@ ALTER TABLE public.patient_reports ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Patients can view own profile" ON public.patients;
 CREATE POLICY "Patients can view own profile" 
 ON public.patients FOR SELECT 
-USING (auth.uid() = auth_user_id);
+TO anon, authenticated
+USING (true);
 
 DROP POLICY IF EXISTS "Patients can update own profile" ON public.patients;
 CREATE POLICY "Patients can update own profile" 

@@ -100,49 +100,28 @@ export const api = {
     if (isSupabaseConfigured && supabase) {
       try {
         const { data, error } = await supabase.auth.signInWithOtp({
-          phone: formattedPhone,
-          options: {
-            shouldCreateUser: false
-          }
+          phone: formattedPhone
         });
 
         if (error) {
-          // If SMS provider is not configured in Supabase (e.g. Twilio not set up)
+          // If SMS provider (Twilio) is not configured in Supabase Auth, use Dev OTP Mode (123456)
           if (error.message?.toLowerCase().includes('unsupported') || error.message?.toLowerCase().includes('provider')) {
-            const localMatched = this.findLocalPatient({ phone: cleanDigits });
-            if (localMatched || cleanDigits === '9876543210') {
-              console.warn('Phone provider not configured in Supabase. Using Dev OTP Mode (123456).');
-              return { isDevMode: true, mockOtp: '123456', message: 'SMS Provider not configured. Use OTP: 123456' };
-            }
-            throw new Error(`No patient account found with mobile number +91 ${cleanDigits}. Please register first.`);
+            console.warn('SMS Provider not configured in Supabase. Switching to Dev OTP Mode (123456).');
+            return { isDevMode: true, mockOtp: '123456', message: 'SMS Provider not configured. Use OTP: 123456' };
           }
-
-          if (error.message?.toLowerCase().includes('signups not allowed') || error.message?.toLowerCase().includes('user not found')) {
-            throw new Error(`No patient account found with mobile number +91 ${cleanDigits}. Please register first.`);
-          }
-
           throw error;
         }
 
         return data;
       } catch (err) {
         if (err.message?.toLowerCase().includes('unsupported') || err.message?.toLowerCase().includes('provider')) {
-          const localMatched = this.findLocalPatient({ phone: cleanDigits });
-          if (localMatched || cleanDigits === '9876543210') {
-            return { isDevMode: true, mockOtp: '123456', message: 'SMS Provider not configured. Use OTP: 123456' };
-          }
-          throw new Error(`No patient account found with mobile number +91 ${cleanDigits}. Please register first.`);
+          return { isDevMode: true, mockOtp: '123456', message: 'SMS Provider not configured. Use OTP: 123456' };
         }
         throw err;
       }
     }
 
     // Offline / Demo Mode
-    const matched = this.findLocalPatient({ phone: cleanDigits });
-    if (!matched && cleanDigits !== '9876543210') {
-      throw new Error(`No patient account found with mobile number +91 ${cleanDigits}. Please register first.`);
-    }
-
     await new Promise(r => setTimeout(r, 400));
     return { mockOtp: '123456', message: 'OTP sent to mobile' };
   },
@@ -150,9 +129,25 @@ export const api = {
   async verifyPhoneOtp(phone, otp) {
     const cleanDigits = phone.replace(/\D/g, '').slice(-10);
     const formattedPhone = `+91 ${cleanDigits.slice(0, 5)} ${cleanDigits.slice(5)}`;
+    let matchedProfile = null;
 
     if (isSupabaseConfigured && supabase) {
-      // 1. Try Supabase official verifyOtp
+      // 1. Search in Supabase 'patients' table by 10-digit phone number
+      try {
+        const { data: patientList } = await supabase
+          .from('patients')
+          .select('*')
+          .ilike('phone', `%${cleanDigits}%`)
+          .limit(1);
+
+        if (patientList && patientList.length > 0) {
+          matchedProfile = patientList[0];
+        }
+      } catch (e) {
+        console.warn('Supabase query by phone note:', e);
+      }
+
+      // 2. Try official Supabase verifyOtp if SMS provider is configured
       try {
         const { data, error } = await supabase.auth.verifyOtp({
           phone: `+91${cleanDigits}`,
@@ -161,51 +156,86 @@ export const api = {
         });
 
         if (!error && data?.user) {
-          let profile = await this.getPatientProfile(data.user.id);
-          if (!profile) {
-            profile = this.findLocalPatient({ phone: cleanDigits }) || {
-              id: data.user.id,
-              auth_user_id: data.user.id,
-              phone: formattedPhone,
-              full_name: data.user.user_metadata?.full_name || `Patient ${cleanDigits.slice(-4)}`,
-              patient_id_mrn: `CTR-${new Date().getFullYear()}-${Math.floor(100000 + Math.random() * 900000)}`
-            };
+          if (!matchedProfile) {
+            matchedProfile = await this.getPatientProfile(data.user.id);
           }
-          setLocalData('patient', profile);
-          saveToDirectory(profile);
-          return { user: data.user, profile };
+          const finalProfile = matchedProfile || {
+            id: data.user.id,
+            auth_user_id: data.user.id,
+            phone: formattedPhone,
+            full_name: data.user.user_metadata?.full_name || `Patient ${cleanDigits.slice(-4)}`,
+            patient_id_mrn: `CTR-${new Date().getFullYear()}-${Math.floor(100000 + Math.random() * 900000)}`
+          };
+          setLocalData('patient', finalProfile);
+          saveToDirectory(finalProfile);
+          return { user: data.user, profile: finalProfile };
         }
       } catch (err) {
         console.warn('Supabase Phone OTP verify attempt:', err);
       }
     }
 
-    // 2. Dev / Fallback OTP verification
-    const matchedProfile = this.findLocalPatient({ phone: cleanDigits });
-    if (!matchedProfile && cleanDigits !== '9876543210') {
-      throw new Error(`No patient account found with mobile number +91 ${cleanDigits}. Please register first.`);
+    // 3. Fallback matching with local directory
+    if (!matchedProfile) {
+      matchedProfile = this.findLocalPatient({ phone: cleanDigits });
     }
 
+    // 4. Validate OTP
     if (otp !== '123456' && otp.length !== 6) {
       throw new Error('Invalid OTP code. Please enter a valid 6-digit OTP.');
     }
 
-    const activeProfile = matchedProfile || this.findLocalPatient({ phone: '9876543210' });
-    if (activeProfile) {
-      setLocalData('patient', activeProfile);
-      saveToDirectory(activeProfile);
+    // 5. If profile exists in Supabase or local, use it!
+    if (matchedProfile) {
+      setLocalData('patient', matchedProfile);
+      saveToDirectory(matchedProfile);
       return { 
         user: { 
-          id: activeProfile.auth_user_id || activeProfile.id, 
-          phone: activeProfile.phone || formattedPhone,
-          email: activeProfile.email,
-          user_metadata: { full_name: activeProfile.full_name }
+          id: matchedProfile.auth_user_id || matchedProfile.id, 
+          phone: matchedProfile.phone || formattedPhone,
+          email: matchedProfile.email,
+          user_metadata: { full_name: matchedProfile.full_name }
         }, 
-        profile: activeProfile 
+        profile: matchedProfile 
       };
     }
 
-    throw new Error(`No patient account found with mobile number +91 ${cleanDigits}. Please register first.`);
+    // 6. If no profile exists yet, create one in Supabase & local storage
+    const newMRN = `CTR-${new Date().getFullYear()}-${Math.floor(100000 + Math.random() * 900000)}`;
+    const fallbackProfile = {
+      id: `p-${cleanDigits}`,
+      full_name: `Patient (${cleanDigits.slice(-4)})`,
+      phone: formattedPhone,
+      email: `patient_${cleanDigits}@caretrack.internal`,
+      patient_id_mrn: newMRN
+    };
+
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const { data: inserted } = await supabase
+          .from('patients')
+          .insert([fallbackProfile])
+          .select()
+          .maybeSingle();
+        if (inserted) {
+          fallbackProfile.id = inserted.id;
+        }
+      } catch (insErr) {
+        console.warn('Profile creation fallback note:', insErr);
+      }
+    }
+
+    setLocalData('patient', fallbackProfile);
+    saveToDirectory(fallbackProfile);
+    return { 
+      user: { 
+        id: fallbackProfile.id, 
+        phone: formattedPhone, 
+        email: fallbackProfile.email,
+        user_metadata: { full_name: fallbackProfile.full_name }
+      }, 
+      profile: fallbackProfile 
+    };
   },
 
   async sendEmailOtp(email) {
@@ -216,26 +246,14 @@ export const api = {
 
     if (isSupabaseConfigured && supabase) {
       const { data, error } = await supabase.auth.signInWithOtp({
-        email: cleanEmail,
-        options: {
-          shouldCreateUser: false
-        }
+        email: cleanEmail
       });
 
       if (error) {
         if (error.message?.toLowerCase().includes('rate limit') || error.code === 'over_email_send_rate_limit') {
-          const matched = this.findLocalPatient({ email: cleanEmail });
-          if (matched || cleanEmail === 'rahul.sharma@caretrack.com') {
-            console.warn('Email rate limit hit in Supabase. Allowed dev fallback OTP (123456).');
-            return { isDevMode: true, mockOtp: '123456', message: 'Email rate limit reached. Use OTP: 123456 or login with Password.' };
-          }
-          throw new Error('Email rate limit exceeded. Please log in with Password or register.');
+          console.warn('Email rate limit hit in Supabase. Using Dev OTP Mode (123456).');
+          return { isDevMode: true, mockOtp: '123456', message: 'Email rate limit reached. Use OTP: 123456 or login with Password.' };
         }
-
-        if (error.message?.toLowerCase().includes('signups not allowed') || error.message?.toLowerCase().includes('user not found')) {
-          throw new Error(`No patient account found with email "${email}". Please register first.`);
-        }
-
         throw error;
       }
 
@@ -243,19 +261,28 @@ export const api = {
     }
 
     // Offline / Demo Mode
-    const matched = this.findLocalPatient({ email: cleanEmail });
-    if (!matched && cleanEmail !== 'rahul.sharma@caretrack.com') {
-      throw new Error(`No patient account found with email "${email}". Please register first.`);
-    }
-
     await new Promise(r => setTimeout(r, 400));
     return { mockOtp: '123456', message: 'OTP sent to email' };
   },
 
   async verifyEmailOtp(email, otp) {
     const cleanEmail = email ? email.trim().toLowerCase() : '';
+    let matchedProfile = null;
 
     if (isSupabaseConfigured && supabase) {
+      try {
+        const { data: patientList } = await supabase
+          .from('patients')
+          .select('*')
+          .ilike('email', cleanEmail)
+          .limit(1);
+        if (patientList && patientList.length > 0) {
+          matchedProfile = patientList[0];
+        }
+      } catch (e) {
+        console.warn('Supabase query by email note:', e);
+      }
+
       try {
         const { data, error } = await supabase.auth.verifyOtp({
           email: cleanEmail,
@@ -264,51 +291,60 @@ export const api = {
         });
 
         if (!error && data?.user) {
-          let profile = await this.getPatientProfile(data.user.id);
-          if (!profile) {
-            profile = this.findLocalPatient({ email: cleanEmail }) || {
-              id: data.user.id,
-              auth_user_id: data.user.id,
-              email: cleanEmail,
-              full_name: data.user.user_metadata?.full_name || cleanEmail.split('@')[0],
-              patient_id_mrn: `CTR-${new Date().getFullYear()}-${Math.floor(100000 + Math.random() * 900000)}`
-            };
+          if (!matchedProfile) {
+            matchedProfile = await this.getPatientProfile(data.user.id);
           }
-          setLocalData('patient', profile);
-          saveToDirectory(profile);
-          return { user: data.user, profile };
+          const finalProfile = matchedProfile || {
+            id: data.user.id,
+            auth_user_id: data.user.id,
+            email: cleanEmail,
+            full_name: data.user.user_metadata?.full_name || cleanEmail.split('@')[0],
+            patient_id_mrn: `CTR-${new Date().getFullYear()}-${Math.floor(100000 + Math.random() * 900000)}`
+          };
+          setLocalData('patient', finalProfile);
+          saveToDirectory(finalProfile);
+          return { user: data.user, profile: finalProfile };
         }
       } catch (err) {
         console.warn('Supabase email OTP verify attempt:', err);
       }
     }
 
-    // Dev / Offline OTP check
-    const matchedProfile = this.findLocalPatient({ email: cleanEmail });
-    if (!matchedProfile && cleanEmail !== 'rahul.sharma@caretrack.com') {
-      throw new Error(`No patient account found with email "${email}". Please register first.`);
+    if (!matchedProfile) {
+      matchedProfile = this.findLocalPatient({ email: cleanEmail });
     }
 
     if (otp !== '123456' && otp.length !== 6) {
       throw new Error('Invalid OTP code. Please enter a valid 6-digit OTP.');
     }
 
-    const activeProfile = matchedProfile || this.findLocalPatient({ email: 'rahul.sharma@caretrack.com' });
-    if (activeProfile) {
-      setLocalData('patient', activeProfile);
-      saveToDirectory(activeProfile);
+    if (matchedProfile) {
+      setLocalData('patient', matchedProfile);
+      saveToDirectory(matchedProfile);
       return { 
         user: { 
-          id: activeProfile.auth_user_id || activeProfile.id, 
-          email: activeProfile.email,
-          phone: activeProfile.phone,
-          user_metadata: { full_name: activeProfile.full_name }
+          id: matchedProfile.auth_user_id || matchedProfile.id, 
+          email: matchedProfile.email,
+          phone: matchedProfile.phone,
+          user_metadata: { full_name: matchedProfile.full_name }
         }, 
-        profile: activeProfile 
+        profile: matchedProfile 
       };
     }
 
-    throw new Error(`No patient account found with email "${email}". Please register first.`);
+    const newMRN = `CTR-${new Date().getFullYear()}-${Math.floor(100000 + Math.random() * 900000)}`;
+    const fallbackProfile = {
+      id: `p-${Date.now()}`,
+      full_name: cleanEmail.split('@')[0],
+      email: cleanEmail,
+      patient_id_mrn: newMRN
+    };
+    setLocalData('patient', fallbackProfile);
+    saveToDirectory(fallbackProfile);
+    return { 
+      user: { id: fallbackProfile.id, email: cleanEmail, user_metadata: { full_name: fallbackProfile.full_name } }, 
+      profile: fallbackProfile 
+    };
   },
 
   async loginWithPassword(email, password) {
@@ -328,6 +364,15 @@ export const api = {
 
       let profile = await this.getPatientProfile(data.user.id);
       if (!profile) {
+        try {
+          const { data: byEmail } = await supabase.from('patients').select('*').ilike('email', cleanEmail).maybeSingle();
+          if (byEmail) profile = byEmail;
+        } catch (e) {
+          console.warn('Fetch profile by email note:', e);
+        }
+      }
+
+      if (!profile) {
         const local = this.findLocalPatient({ email: cleanEmail });
         profile = local || {
           id: data.user.id,
@@ -345,10 +390,6 @@ export const api = {
 
     // Offline / Demo Mode
     const matched = this.findLocalPatient({ email: cleanEmail });
-    if (!matched && cleanEmail !== 'rahul.sharma@caretrack.com') {
-      throw new Error(`No patient account found with email "${email}". Please register first.`);
-    }
-
     const profile = matched || this.findLocalPatient({ email: 'rahul.sharma@caretrack.com' });
     setLocalData('patient', profile);
     return { user: { id: profile.auth_user_id || profile.id, email: profile.email }, profile };
@@ -390,9 +431,9 @@ export const api = {
         }
 
         if (authError.message?.toLowerCase().includes('confirmation email') || authError.message?.toLowerCase().includes('rate limit')) {
-          console.warn('Supabase email dispatch skipped. Creating patient record directly.');
+          console.warn('Supabase email dispatch skipped. Creating patient record directly in DB.');
           const newMRN = `CTR-${new Date().getFullYear()}-${Math.floor(100000 + Math.random() * 900000)}`;
-          const profileResult = { ...formData, email: cleanEmail, patient_id_mrn: newMRN, id: `p-${Date.now()}` };
+          const profileResult = { ...formData, email: cleanEmail, phone: cleanPhone, patient_id_mrn: newMRN, id: `p-${Date.now()}` };
           try {
             const { data: directProfile } = await supabase
               .from('patients')
@@ -433,7 +474,7 @@ export const api = {
         }
       }
 
-      // Try fetching profile or build from registered data
+      // Fetch profile or build from registered data
       let profile = null;
       if (authData?.user) {
         try {
@@ -452,6 +493,7 @@ export const api = {
       const finalProfile = profile || {
         ...formData,
         email: cleanEmail,
+        phone: cleanPhone,
         id: authData?.user?.id || `p-${Date.now()}`,
         auth_user_id: authData?.user?.id,
         patient_id_mrn: newMRN
@@ -459,7 +501,7 @@ export const api = {
 
       setLocalData('patient', finalProfile);
       saveToDirectory(finalProfile);
-      return { user: authData.user || { id: finalProfile.id, email: cleanEmail }, profile: finalProfile };
+      return { user: authData?.user || { id: finalProfile.id, email: cleanEmail, phone: cleanPhone }, profile: finalProfile };
     }
 
     // Mock fallback
@@ -467,6 +509,7 @@ export const api = {
     const newPatient = {
       ...formData,
       email: cleanEmail,
+      phone: cleanPhone,
       id: `p-${Date.now()}`,
       auth_user_id: `auth-${Date.now()}`,
       patient_id_mrn: newMRN,
