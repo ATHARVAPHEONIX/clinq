@@ -1,23 +1,20 @@
 -- ==============================================================================
--- CareTrack Clinical EMR - Supabase PostgreSQL Schema & Security Policies
+-- CareTrack Clinical EMR - Supabase Setup Script
+-- Project ID: oarmuohgkjaijfphmntv
+-- Run this in: https://supabase.com/dashboard/project/oarmuohgkjaijfphmntv/sql/new
 -- ==============================================================================
 
--- 1. Enable Required Extensions
+-- 1. Enable UUID extension
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
--- 2. Drop Existing Tables if cleaning up (Optional)
--- DROP TABLE IF EXISTS public.patient_reports CASCADE;
--- DROP TABLE IF EXISTS public.patient_medical_history CASCADE;
--- DROP TABLE IF EXISTS public.patients CASCADE;
-
--- 3. Create 'patients' Table
+-- 2. Create 'patients' profile table
 CREATE TABLE IF NOT EXISTS public.patients (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     auth_user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
     patient_id_mrn TEXT UNIQUE NOT NULL DEFAULT ('CTR-' || to_char(NOW(), 'YYYY') || '-' || lpad((floor(random() * 900000 + 100000))::text, 6, '0')),
     full_name TEXT NOT NULL,
     email TEXT UNIQUE NOT NULL,
-    phone TEXT UNIQUE NOT NULL,
+    phone TEXT,
     date_of_birth DATE,
     gender TEXT DEFAULT 'Male',
     blood_group TEXT DEFAULT 'O+',
@@ -37,7 +34,7 @@ CREATE TABLE IF NOT EXISTS public.patients (
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 4. Create 'patient_medical_history' Table
+-- 3. Create 'patient_medical_history' table (Doctor Consultations)
 CREATE TABLE IF NOT EXISTS public.patient_medical_history (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     patient_id UUID REFERENCES public.patients(id) ON DELETE CASCADE,
@@ -57,7 +54,7 @@ CREATE TABLE IF NOT EXISTS public.patient_medical_history (
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 5. Create 'patient_reports' Table
+-- 4. Create 'patient_reports' table (Stores all diagnostic & medical documents)
 CREATE TABLE IF NOT EXISTS public.patient_reports (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     patient_id UUID REFERENCES public.patients(id) ON DELETE CASCADE,
@@ -69,104 +66,114 @@ CREATE TABLE IF NOT EXISTS public.patient_reports (
     file_name TEXT NOT NULL,
     file_size BIGINT,
     mime_type TEXT DEFAULT 'application/pdf',
+    description TEXT,
     uploaded_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 6. Indexes for High Performance Queries
+-- 5. Indexes for fast query execution
 CREATE INDEX IF NOT EXISTS idx_patients_auth_user ON public.patients(auth_user_id);
 CREATE INDEX IF NOT EXISTS idx_patients_email ON public.patients(email);
-CREATE INDEX IF NOT EXISTS idx_patients_phone ON public.patients(phone);
 CREATE INDEX IF NOT EXISTS idx_history_patient_date ON public.patient_medical_history(patient_id, visit_date DESC);
 CREATE INDEX IF NOT EXISTS idx_reports_patient_date ON public.patient_reports(patient_id, report_date DESC);
+CREATE INDEX IF NOT EXISTS idx_reports_history_id ON public.patient_reports(medical_history_id);
 
--- 7. Enable Row Level Security (RLS)
+-- 6. Enable Row Level Security (RLS) on all tables
 ALTER TABLE public.patients ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.patient_medical_history ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.patient_reports ENABLE ROW LEVEL SECURITY;
 
--- 8. RLS Policies for 'patients'
+-- 7. RLS Security Policies for 'patients'
 DROP POLICY IF EXISTS "Patients can view own profile" ON public.patients;
-CREATE POLICY "Patients can view own profile"
-ON public.patients FOR SELECT
+CREATE POLICY "Patients can view own profile" 
+ON public.patients FOR SELECT 
 USING (auth.uid() = auth_user_id);
 
 DROP POLICY IF EXISTS "Patients can update own profile" ON public.patients;
-CREATE POLICY "Patients can update own profile"
-ON public.patients FOR UPDATE
+CREATE POLICY "Patients can update own profile" 
+ON public.patients FOR UPDATE 
 USING (auth.uid() = auth_user_id);
 
 DROP POLICY IF EXISTS "Patients can insert own profile" ON public.patients;
-CREATE POLICY "Patients can insert own profile"
-ON public.patients FOR INSERT
+CREATE POLICY "Patients can insert own profile" 
+ON public.patients FOR INSERT 
 WITH CHECK (auth.uid() = auth_user_id);
 
--- 9. RLS Policies for 'patient_medical_history'
+-- 8. RLS Security Policies for 'patient_medical_history'
 DROP POLICY IF EXISTS "Patients can view own medical history" ON public.patient_medical_history;
-CREATE POLICY "Patients can view own medical history"
-ON public.patient_medical_history FOR SELECT
+CREATE POLICY "Patients can view own medical history" 
+ON public.patient_medical_history FOR SELECT 
 USING (patient_id IN (SELECT id FROM public.patients WHERE auth_user_id = auth.uid()));
 
 DROP POLICY IF EXISTS "Patients can insert own medical history" ON public.patient_medical_history;
-CREATE POLICY "Patients can insert own medical history"
-ON public.patient_medical_history FOR INSERT
+CREATE POLICY "Patients can insert own medical history" 
+ON public.patient_medical_history FOR INSERT 
 WITH CHECK (patient_id IN (SELECT id FROM public.patients WHERE auth_user_id = auth.uid()));
 
 DROP POLICY IF EXISTS "Patients can update own medical history" ON public.patient_medical_history;
-CREATE POLICY "Patients can update own medical history"
-ON public.patient_medical_history FOR UPDATE
+CREATE POLICY "Patients can update own medical history" 
+ON public.patient_medical_history FOR UPDATE 
 USING (patient_id IN (SELECT id FROM public.patients WHERE auth_user_id = auth.uid()));
 
--- 10. RLS Policies for 'patient_reports'
+-- 9. RLS Security Policies for 'patient_reports'
 DROP POLICY IF EXISTS "Patients can view own reports" ON public.patient_reports;
-CREATE POLICY "Patients can view own reports"
-ON public.patient_reports FOR SELECT
+CREATE POLICY "Patients can view own reports" 
+ON public.patient_reports FOR SELECT 
 USING (patient_id IN (SELECT id FROM public.patients WHERE auth_user_id = auth.uid()));
 
 DROP POLICY IF EXISTS "Patients can insert own reports" ON public.patient_reports;
-CREATE POLICY "Patients can insert own reports"
-ON public.patient_reports FOR INSERT
+CREATE POLICY "Patients can insert own reports" 
+ON public.patient_reports FOR INSERT 
 WITH CHECK (patient_id IN (SELECT id FROM public.patients WHERE auth_user_id = auth.uid()));
 
 DROP POLICY IF EXISTS "Patients can delete own reports" ON public.patient_reports;
-CREATE POLICY "Patients can delete own reports"
-ON public.patient_reports FOR DELETE
+CREATE POLICY "Patients can delete own reports" 
+ON public.patient_reports FOR DELETE 
 USING (patient_id IN (SELECT id FROM public.patients WHERE auth_user_id = auth.uid()));
 
--- 11. Storage Bucket Creation & Security Policies
--- In Supabase dashboard: Storage -> New Bucket -> name: "patient-reports", Private: true
-INSERT INTO storage.buckets (id, name, public)
-VALUES ('patient-reports', 'patient-reports', false)
+-- 10. Storage Bucket Setup: 'patient-reports'
+INSERT INTO storage.buckets (id, name, public) 
+VALUES ('patient-reports', 'patient-reports', false) 
 ON CONFLICT (id) DO NOTHING;
 
-DROP POLICY IF EXISTS "Patients can upload reports" ON storage.objects;
-CREATE POLICY "Patients can upload reports"
-ON storage.objects FOR INSERT
+DROP POLICY IF EXISTS "Patients can upload report files" ON storage.objects;
+CREATE POLICY "Patients can upload report files" 
+ON storage.objects FOR INSERT 
 WITH CHECK (
-  bucket_id = 'patient-reports' AND
+  bucket_id = 'patient-reports' AND 
   auth.role() = 'authenticated'
 );
 
-DROP POLICY IF EXISTS "Patients can read own reports" ON storage.objects;
-CREATE POLICY "Patients can read own reports"
-ON storage.objects FOR SELECT
+DROP POLICY IF EXISTS "Patients can view own report files" ON storage.objects;
+CREATE POLICY "Patients can view own report files" 
+ON storage.objects FOR SELECT 
 USING (
-  bucket_id = 'patient-reports' AND
+  bucket_id = 'patient-reports' AND 
   auth.role() = 'authenticated'
 );
 
--- 12. Auto-Update Timestamp Trigger
-CREATE OR REPLACE FUNCTION public.handle_updated_at()
+-- 11. Automatic Profile Creation Trigger on Sign Up
+CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER AS $$
 BEGIN
-    NEW.updated_at = NOW();
-    RETURN NEW;
+  INSERT INTO public.patients (
+    auth_user_id,
+    full_name,
+    email,
+    phone
+  )
+  VALUES (
+    NEW.id,
+    COALESCE(NEW.raw_user_meta_data->>'full_name', split_part(NEW.email, '@', 1)),
+    NEW.email,
+    COALESCE(NEW.raw_user_meta_data->>'phone', NEW.phone)
+  )
+  ON CONFLICT (email) DO UPDATE
+  SET auth_user_id = NEW.id;
+  RETURN NEW;
 END;
-$$ LANGUAGE plpgsql;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
 
-CREATE OR REPLACE TRIGGER update_patients_modtime
-BEFORE UPDATE ON public.patients
-FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
-
-CREATE OR REPLACE TRIGGER update_history_modtime
-BEFORE UPDATE ON public.patient_medical_history
-FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+CREATE TRIGGER on_auth_user_created
+  AFTER INSERT ON auth.users
+  FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
