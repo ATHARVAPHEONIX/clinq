@@ -18,6 +18,19 @@ const setLocalData = (key, val) => {
   }
 };
 
+// UUID Validator Helper
+const isValidUUID = (str) => {
+  if (!str || typeof str !== 'string') return false;
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+};
+
+// Unique MRN Generator
+export const generateUniqueMRN = () => {
+  const year = new Date().getFullYear();
+  const randomSuffix = Math.floor(100000 + Math.random() * 900000);
+  return `CTR-${year}-${randomSuffix}`;
+};
+
 // Seed demo patient if directory is brand new
 const initDemoDirectory = () => {
   const existing = getLocalData('patients_directory', null);
@@ -53,7 +66,8 @@ const saveToDirectory = (profile) => {
     const pDigits = p.phone ? p.phone.replace(/\D/g, '').slice(-10) : '';
     const emailMatch = p.email && profile.email && p.email.toLowerCase() === profile.email.toLowerCase();
     const phoneMatch = cleanDigits && pDigits && cleanDigits === pDigits;
-    return !emailMatch && !phoneMatch;
+    const mrnMatch = p.patient_id_mrn && profile.patient_id_mrn && p.patient_id_mrn === profile.patient_id_mrn;
+    return !emailMatch && !phoneMatch && !mrnMatch;
   });
   setLocalData('patients_directory', [profile, ...filtered]);
 };
@@ -61,7 +75,7 @@ const saveToDirectory = (profile) => {
 export const api = {
   isConfigured: isSupabaseConfigured,
 
-  // --- PATIENT EXISTENCE HELPER ---
+  // Helper to find patient locally
   findLocalPatient({ phone, email }) {
     const cleanDigits = phone ? phone.replace(/\D/g, '').slice(-10) : '';
     const cleanEmail = email ? email.trim().toLowerCase() : '';
@@ -88,6 +102,96 @@ export const api = {
     return null;
   },
 
+  // Helper to resolve or create a valid PostgreSQL UUID in public.patients
+  async resolvePatientUUID(patientIdentifier) {
+    if (isSupabaseConfigured && supabase) {
+      // 1. If it's already a valid UUID, check if it exists in patients table
+      if (isValidUUID(patientIdentifier)) {
+        try {
+          const { data } = await supabase
+            .from('patients')
+            .select('id')
+            .eq('id', patientIdentifier)
+            .maybeSingle();
+          if (data?.id) return data.id;
+        } catch (e) {
+          console.warn('UUID check error:', e);
+        }
+      }
+
+      // 2. Lookup by auth_user_id, email, phone or MRN
+      const localProfile = getLocalData('patient', {});
+      const email = localProfile.email || '';
+      const phone = localProfile.phone || '';
+      const cleanDigits = phone.replace(/\D/g, '').slice(-10);
+
+      try {
+        let query = supabase.from('patients').select('id');
+        if (patientIdentifier) {
+          query = query.or(`auth_user_id.eq.${patientIdentifier},id.eq.${patientIdentifier},email.ilike.${patientIdentifier}`);
+        } else if (email) {
+          query = query.ilike('email', email);
+        } else if (cleanDigits) {
+          query = query.ilike('phone', `%${cleanDigits}%`);
+        }
+
+        const { data: list } = await query.limit(1);
+        if (list && list.length > 0) {
+          return list[0].id;
+        }
+      } catch (e) {
+        console.warn('Patient lookup for UUID note:', e);
+      }
+
+      // 3. If patient doesn't exist in Supabase 'patients', insert one to guarantee Foreign Key validity
+      const newMRN = localProfile.patient_id_mrn || generateUniqueMRN();
+      const patientData = {
+        full_name: localProfile.full_name || 'CareTrack Patient',
+        email: email || `patient_${Date.now()}@caretrack.internal`,
+        phone: phone || '+91 98765 43210',
+        patient_id_mrn: newMRN,
+        date_of_birth: localProfile.date_of_birth || null,
+        gender: localProfile.gender || 'Male',
+        blood_group: localProfile.blood_group || 'O+',
+        address: localProfile.address || '',
+        city: localProfile.city || '',
+        allergies: localProfile.allergies || '',
+        medical_conditions: localProfile.medical_conditions || ''
+      };
+
+      try {
+        const { data: newPatient, error: insertErr } = await supabase
+          .from('patients')
+          .insert([patientData])
+          .select('id')
+          .maybeSingle();
+
+        if (!insertErr && newPatient?.id) {
+          // Also sync to patient_directory
+          try {
+            await supabase.from('patient_directory').insert([{
+              id: newPatient.id,
+              patient_mrn: newMRN,
+              full_name: patientData.full_name,
+              phone: patientData.phone,
+              email: patientData.email,
+              gender: patientData.gender,
+              blood_group: patientData.blood_group,
+              city: patientData.city
+            }]);
+          } catch (dirErr) {
+            console.warn('Directory sync note:', dirErr);
+          }
+          return newPatient.id;
+        }
+      } catch (err) {
+        console.warn('Patient creation in Supabase note:', err);
+      }
+    }
+
+    return patientIdentifier || 'p-1';
+  },
+
   // --- AUTH SERVICES ---
   async sendPhoneOtp(phone) {
     const cleanDigits = phone.replace(/\D/g, '').slice(-10);
@@ -104,9 +208,8 @@ export const api = {
         });
 
         if (error) {
-          // If SMS provider (Twilio) is not configured in Supabase Auth, use Dev OTP Mode (123456)
           if (error.message?.toLowerCase().includes('unsupported') || error.message?.toLowerCase().includes('provider')) {
-            console.warn('SMS Provider not configured in Supabase. Switching to Dev OTP Mode (123456).');
+            console.warn('SMS Provider not configured in Supabase. Using Dev OTP Mode (123456).');
             return { isDevMode: true, mockOtp: '123456', message: 'SMS Provider not configured. Use OTP: 123456' };
           }
           throw error;
@@ -121,7 +224,6 @@ export const api = {
       }
     }
 
-    // Offline / Demo Mode
     await new Promise(r => setTimeout(r, 400));
     return { mockOtp: '123456', message: 'OTP sent to mobile' };
   },
@@ -132,7 +234,6 @@ export const api = {
     let matchedProfile = null;
 
     if (isSupabaseConfigured && supabase) {
-      // 1. Search in Supabase 'patients' table by 10-digit phone number
       try {
         const { data: patientList } = await supabase
           .from('patients')
@@ -147,7 +248,6 @@ export const api = {
         console.warn('Supabase query by phone note:', e);
       }
 
-      // 2. Try official Supabase verifyOtp if SMS provider is configured
       try {
         const { data, error } = await supabase.auth.verifyOtp({
           phone: `+91${cleanDigits}`,
@@ -164,7 +264,7 @@ export const api = {
             auth_user_id: data.user.id,
             phone: formattedPhone,
             full_name: data.user.user_metadata?.full_name || `Patient ${cleanDigits.slice(-4)}`,
-            patient_id_mrn: `CTR-${new Date().getFullYear()}-${Math.floor(100000 + Math.random() * 900000)}`
+            patient_id_mrn: generateUniqueMRN()
           };
           setLocalData('patient', finalProfile);
           saveToDirectory(finalProfile);
@@ -175,17 +275,14 @@ export const api = {
       }
     }
 
-    // 3. Fallback matching with local directory
     if (!matchedProfile) {
       matchedProfile = this.findLocalPatient({ phone: cleanDigits });
     }
 
-    // 4. Validate OTP
     if (otp !== '123456' && otp.length !== 6) {
       throw new Error('Invalid OTP code. Please enter a valid 6-digit OTP.');
     }
 
-    // 5. If profile exists in Supabase or local, use it!
     if (matchedProfile) {
       setLocalData('patient', matchedProfile);
       saveToDirectory(matchedProfile);
@@ -200,8 +297,8 @@ export const api = {
       };
     }
 
-    // 6. If no profile exists yet, create one in Supabase & local storage
-    const newMRN = `CTR-${new Date().getFullYear()}-${Math.floor(100000 + Math.random() * 900000)}`;
+    // Auto-create initial profile for this phone number
+    const newMRN = generateUniqueMRN();
     const fallbackProfile = {
       id: `p-${cleanDigits}`,
       full_name: `Patient (${cleanDigits.slice(-4)})`,
@@ -260,7 +357,6 @@ export const api = {
       return data;
     }
 
-    // Offline / Demo Mode
     await new Promise(r => setTimeout(r, 400));
     return { mockOtp: '123456', message: 'OTP sent to email' };
   },
@@ -299,7 +395,7 @@ export const api = {
             auth_user_id: data.user.id,
             email: cleanEmail,
             full_name: data.user.user_metadata?.full_name || cleanEmail.split('@')[0],
-            patient_id_mrn: `CTR-${new Date().getFullYear()}-${Math.floor(100000 + Math.random() * 900000)}`
+            patient_id_mrn: generateUniqueMRN()
           };
           setLocalData('patient', finalProfile);
           saveToDirectory(finalProfile);
@@ -332,7 +428,7 @@ export const api = {
       };
     }
 
-    const newMRN = `CTR-${new Date().getFullYear()}-${Math.floor(100000 + Math.random() * 900000)}`;
+    const newMRN = generateUniqueMRN();
     const fallbackProfile = {
       id: `p-${Date.now()}`,
       full_name: cleanEmail.split('@')[0],
@@ -379,7 +475,7 @@ export const api = {
           auth_user_id: data.user.id,
           email: cleanEmail,
           full_name: data.user.user_metadata?.full_name || cleanEmail.split('@')[0],
-          patient_id_mrn: `CTR-${new Date().getFullYear()}-${Math.floor(100000 + Math.random() * 900000)}`
+          patient_id_mrn: generateUniqueMRN()
         };
       }
 
@@ -398,6 +494,7 @@ export const api = {
   async registerPatient(formData) {
     const cleanEmail = formData.email ? formData.email.trim().toLowerCase() : '';
     const cleanPhone = formData.phone || '';
+    const uniqueMRN = generateUniqueMRN();
 
     if (isSupabaseConfigured && supabase) {
       const { data: authData, error: authError } = await supabase.auth.signUp({
@@ -407,6 +504,7 @@ export const api = {
           data: {
             full_name: formData.full_name,
             phone: cleanPhone,
+            patient_id_mrn: uniqueMRN,
             date_of_birth: formData.date_of_birth,
             gender: formData.gender,
             blood_group: formData.blood_group,
@@ -425,78 +523,68 @@ export const api = {
         }
       });
 
-      if (authError) {
-        if (authError.message?.toLowerCase().includes('already registered')) {
-          throw new Error('This email is already registered. Please go to Login.');
-        }
-
-        if (authError.message?.toLowerCase().includes('confirmation email') || authError.message?.toLowerCase().includes('rate limit')) {
-          console.warn('Supabase email dispatch skipped. Creating patient record directly in DB.');
-          const newMRN = `CTR-${new Date().getFullYear()}-${Math.floor(100000 + Math.random() * 900000)}`;
-          const profileResult = { ...formData, email: cleanEmail, phone: cleanPhone, patient_id_mrn: newMRN, id: `p-${Date.now()}` };
-          try {
-            const { data: directProfile } = await supabase
-              .from('patients')
-              .insert([{
-                full_name: formData.full_name,
-                email: cleanEmail,
-                phone: cleanPhone,
-                patient_id_mrn: newMRN,
-                date_of_birth: formData.date_of_birth || null,
-                gender: formData.gender || 'Male',
-                blood_group: formData.blood_group || 'O+',
-                address: formData.address || '',
-                city: formData.city || '',
-                state: formData.state || '',
-                pincode: formData.pincode || '',
-                emergency_contact_name: formData.emergency_contact_name || '',
-                emergency_contact_phone: formData.emergency_contact_phone || '',
-                allergies: formData.allergies || '',
-                medical_conditions: formData.medical_conditions || ''
-              }])
-              .select()
-              .maybeSingle();
-
-            if (directProfile) {
-              setLocalData('patient', directProfile);
-              saveToDirectory(directProfile);
-              return { user: { id: directProfile.id, email: cleanEmail, phone: cleanPhone }, profile: directProfile };
-            }
-          } catch (insertErr) {
-            console.warn('Direct insert fallback note:', insertErr);
-          }
-
-          setLocalData('patient', profileResult);
-          saveToDirectory(profileResult);
-          return { user: { id: profileResult.id, email: cleanEmail, phone: cleanPhone }, profile: profileResult };
-        } else {
-          throw authError;
-        }
+      if (authError && authError.message?.toLowerCase().includes('already registered')) {
+        throw new Error('This email is already registered. Please go to Login.');
       }
 
-      // Fetch profile or build from registered data
-      let profile = null;
-      if (authData?.user) {
-        try {
-          const { data: fetchedProfile } = await supabase
-            .from('patients')
-            .select('*')
-            .eq('email', cleanEmail)
-            .maybeSingle();
-          if (fetchedProfile) profile = fetchedProfile;
-        } catch (err) {
-          console.warn('Profile fetch after signup:', err);
-        }
-      }
-
-      const newMRN = `CTR-${new Date().getFullYear()}-${Math.floor(100000 + Math.random() * 900000)}`;
-      const finalProfile = profile || {
-        ...formData,
+      // Insert directly into public.patients and public.patient_directory
+      const patientPayload = {
+        auth_user_id: authData?.user?.id || null,
+        full_name: formData.full_name,
         email: cleanEmail,
         phone: cleanPhone,
-        id: authData?.user?.id || `p-${Date.now()}`,
-        auth_user_id: authData?.user?.id,
-        patient_id_mrn: newMRN
+        patient_id_mrn: uniqueMRN,
+        date_of_birth: formData.date_of_birth || null,
+        gender: formData.gender || 'Male',
+        blood_group: formData.blood_group || 'O+',
+        address: formData.address || '',
+        city: formData.city || '',
+        state: formData.state || '',
+        pincode: formData.pincode || '',
+        emergency_contact_name: formData.emergency_contact_name || '',
+        emergency_contact_relation: formData.emergency_contact_relation || '',
+        emergency_contact_phone: formData.emergency_contact_phone || '',
+        allergies: formData.allergies || '',
+        medical_conditions: formData.medical_conditions || '',
+        medications: formData.medications || '',
+        surgeries: formData.surgeries || ''
+      };
+
+      let directProfile = null;
+      try {
+        const { data: dbPatient } = await supabase
+          .from('patients')
+          .insert([patientPayload])
+          .select()
+          .maybeSingle();
+        if (dbPatient) directProfile = dbPatient;
+
+        // Insert into patient_directory
+        await supabase
+          .from('patient_directory')
+          .insert([{
+            id: dbPatient?.id || undefined,
+            patient_mrn: uniqueMRN,
+            full_name: formData.full_name,
+            phone: cleanPhone,
+            email: cleanEmail,
+            gender: formData.gender || 'Male',
+            blood_group: formData.blood_group || 'O+',
+            date_of_birth: formData.date_of_birth || null,
+            address: formData.address || '',
+            city: formData.city || '',
+            emergency_contact_name: formData.emergency_contact_name || '',
+            emergency_contact_phone: formData.emergency_contact_phone || '',
+            allergies: formData.allergies || '',
+            medical_conditions: formData.medical_conditions || ''
+          }]);
+      } catch (insertErr) {
+        console.warn('Patient and directory insert note:', insertErr);
+      }
+
+      const finalProfile = directProfile || {
+        ...patientPayload,
+        id: authData?.user?.id || `p-${Date.now()}`
       };
 
       setLocalData('patient', finalProfile);
@@ -505,14 +593,13 @@ export const api = {
     }
 
     // Mock fallback
-    const newMRN = `CTR-${new Date().getFullYear()}-${Math.floor(100000 + Math.random() * 900000)}`;
     const newPatient = {
       ...formData,
       email: cleanEmail,
       phone: cleanPhone,
       id: `p-${Date.now()}`,
       auth_user_id: `auth-${Date.now()}`,
-      patient_id_mrn: newMRN,
+      patient_id_mrn: uniqueMRN,
       created_at: new Date().toISOString()
     };
     setLocalData('patient', newPatient);
@@ -569,7 +656,29 @@ export const api = {
           .or(`id.eq.${patientId},auth_user_id.eq.${patientId}`)
           .select()
           .maybeSingle();
+
         if (!error && data) {
+          // Sync to patient_directory
+          try {
+            await supabase
+              .from('patient_directory')
+              .update({
+                full_name: updateData.full_name,
+                phone: updateData.phone,
+                gender: updateData.gender,
+                blood_group: updateData.blood_group,
+                address: updateData.address,
+                city: updateData.city,
+                emergency_contact_name: updateData.emergency_contact_name,
+                emergency_contact_phone: updateData.emergency_contact_phone,
+                allergies: updateData.allergies,
+                medical_conditions: updateData.medical_conditions
+              })
+              .eq('patient_mrn', data.patient_id_mrn);
+          } catch (dirErr) {
+            console.warn('Directory update note:', dirErr);
+          }
+
           setLocalData('patient', data);
           saveToDirectory(data);
           return data;
@@ -585,109 +694,219 @@ export const api = {
     return updated;
   },
 
+  // --- MEDICAL HISTORY VISITS ---
   async getMedicalHistory(patientId) {
+    let supabaseVisits = [];
     if (isSupabaseConfigured && supabase) {
       try {
+        const realUUID = await this.resolvePatientUUID(patientId);
         let query = supabase
           .from('patient_medical_history')
           .select('*, reports:patient_reports(*)')
           .order('visit_date', { ascending: false });
 
-        if (patientId && patientId !== 'dev-phone-user' && patientId !== 'u-1') {
-          query = query.eq('patient_id', patientId);
+        if (isValidUUID(realUUID)) {
+          query = query.eq('patient_id', realUUID);
         }
 
         const { data, error } = await query;
-        if (!error && data && data.length > 0) return data;
+        if (!error && data && data.length > 0) {
+          supabaseVisits = data;
+        }
       } catch (err) {
         console.warn('getMedicalHistory Supabase error:', err);
       }
     }
-    return getLocalData('visits', []);
+
+    const localVisits = getLocalData('visits', []);
+    if (supabaseVisits.length > 0) {
+      // Merge with local visits
+      const existingIds = new Set(supabaseVisits.map(v => v.id));
+      const combined = [...supabaseVisits, ...localVisits.filter(v => !existingIds.has(v.id))];
+      setLocalData('visits', combined);
+      return combined;
+    }
+
+    return localVisits;
   },
 
   async addMedicalVisit(patientId, visitData) {
+    let realUUID = patientId;
     if (isSupabaseConfigured && supabase) {
       try {
+        realUUID = await this.resolvePatientUUID(patientId);
+
+        // Sanitize payload by removing 'reports' array and non-table fields
+        const cleanPayload = {
+          patient_id: realUUID,
+          visit_date: visitData.visit_date || new Date().toISOString().split('T')[0],
+          doctor_name: visitData.doctor_name,
+          specialization: visitData.specialization || 'General Physician',
+          hospital_name: visitData.hospital_name,
+          visit_type: visitData.visit_type || 'Consultation',
+          reason: visitData.reason || '',
+          symptoms: visitData.symptoms || '',
+          diagnosis: visitData.diagnosis || '',
+          doctor_notes: visitData.doctor_notes || '',
+          treatment: visitData.treatment || '',
+          prescription: visitData.prescription || null,
+          prescription_notes: visitData.prescription_notes || ''
+        };
+
         const { data, error } = await supabase
           .from('patient_medical_history')
-          .insert([{ ...visitData, patient_id: patientId }])
+          .insert([cleanPayload])
           .select()
           .single();
-        if (!error && data) return data;
+
+        if (!error && data) {
+          const combined = { ...data, reports: visitData.reports || [] };
+          const current = getLocalData('visits', []);
+          setLocalData('visits', [combined, ...current]);
+          return combined;
+        } else {
+          console.warn('Supabase visit insert error:', error);
+        }
       } catch (err) {
         console.warn('addMedicalVisit error:', err);
       }
     }
+
+    // Local fallback
     const current = getLocalData('visits', []);
-    const newVisit = { ...visitData, id: `v-${Date.now()}`, patient_id: patientId || 'p-1', created_at: new Date().toISOString() };
+    const newVisit = { 
+      ...visitData, 
+      id: `v-${Date.now()}`, 
+      patient_id: realUUID || 'p-1', 
+      created_at: new Date().toISOString() 
+    };
     setLocalData('visits', [newVisit, ...current]);
     return newVisit;
   },
 
+  // --- PATIENT REPORTS ---
   async getAllReports(patientId) {
+    let supabaseReports = [];
     if (isSupabaseConfigured && supabase) {
       try {
+        const realUUID = await this.resolvePatientUUID(patientId);
         let query = supabase
           .from('patient_reports')
           .select('*')
           .order('report_date', { ascending: false });
 
-        if (patientId && patientId !== 'dev-phone-user' && patientId !== 'u-1') {
-          query = query.eq('patient_id', patientId);
+        if (isValidUUID(realUUID)) {
+          query = query.eq('patient_id', realUUID);
         }
 
         const { data, error } = await query;
-        if (!error && data && data.length > 0) return data;
+        if (!error && data && data.length > 0) {
+          supabaseReports = data;
+        }
       } catch (err) {
         console.warn('getAllReports error:', err);
       }
     }
+
+    const localReports = getLocalData('reports', []);
     const visits = getLocalData('visits', []);
-    const reports = [];
     visits.forEach(v => {
-      if (v.reports) v.reports.forEach(r => reports.push({ ...r, doctor_name: v.doctor_name, hospital_name: v.hospital_name, visit_date: v.visit_date }));
+      if (v.reports && Array.isArray(v.reports)) {
+        v.reports.forEach(r => {
+          if (!localReports.some(lr => lr.id === r.id)) {
+            localReports.push({ ...r, doctor_name: v.doctor_name, hospital_name: v.hospital_name, visit_date: v.visit_date });
+          }
+        });
+      }
     });
-    return reports;
+
+    if (supabaseReports.length > 0) {
+      const existingIds = new Set(supabaseReports.map(r => r.id));
+      const combined = [...supabaseReports, ...localReports.filter(r => !existingIds.has(r.id))];
+      setLocalData('reports', combined);
+      return combined;
+    }
+
+    return localReports;
   },
 
-  async uploadReport(patientId, file, metadata) {
-    if (isSupabaseConfigured && supabase && patientId) {
-      try {
-        const filePath = `${patientId}/${Date.now()}_${file.name}`;
-        const { error: uploadErr } = await supabase.storage.from('patient-reports').upload(filePath, file);
-        if (uploadErr) console.warn('Storage upload note:', uploadErr);
+  async uploadReport(patientId, file, metadata = {}) {
+    let realUUID = patientId;
+    let fileUrl = 'https://images.unsplash.com/photo-1579154204601-01588f351e67?auto=format&fit=crop&w=1200&q=80';
 
-        const { data: urlData } = await supabase.storage.from('patient-reports').createSignedUrl(filePath, 60 * 60 * 24);
-        const { data, error: dbErr } = await supabase.from('patient_reports').insert([{
-          patient_id: patientId,
-          medical_history_id: metadata.visit_id || null,
-          report_name: metadata.report_name,
-          report_type: metadata.report_type,
-          report_date: metadata.report_date,
-          file_url: urlData?.signedUrl || filePath,
-          file_name: file.name,
-          file_size: file.size,
-          mime_type: file.type
-        }]).select().single();
-        if (!dbErr && data) return data;
+    if (isSupabaseConfigured && supabase) {
+      try {
+        realUUID = await this.resolvePatientUUID(patientId);
+        const fileName = file?.name || `${metadata.report_name || 'Report'}.pdf`;
+        const filePath = `${realUUID}/${Date.now()}_${fileName.replace(/\s+/g, '_')}`;
+
+        // 1. Try uploading to Supabase Storage bucket 'patient-reports'
+        if (file) {
+          try {
+            const { error: uploadErr } = await supabase.storage
+              .from('patient-reports')
+              .upload(filePath, file, { upsert: true });
+
+            if (!uploadErr) {
+              const { data: publicUrlData } = supabase.storage
+                .from('patient-reports')
+                .getPublicUrl(filePath);
+              fileUrl = publicUrlData?.publicUrl || fileUrl;
+            }
+          } catch (storageErr) {
+            console.warn('Storage upload error:', storageErr);
+          }
+        }
+
+        // 2. Insert into 'patient_reports' table
+        const reportPayload = {
+          patient_id: realUUID,
+          medical_history_id: isValidUUID(metadata.visit_id) ? metadata.visit_id : null,
+          report_name: metadata.report_name || fileName.replace(/\.[^/.]+$/, ""),
+          report_type: metadata.report_type || 'Blood Test',
+          report_date: metadata.report_date || new Date().toISOString().split('T')[0],
+          file_url: fileUrl,
+          file_name: fileName,
+          file_size: file?.size || 1450000,
+          mime_type: file?.type || 'application/pdf',
+          description: metadata.description || ''
+        };
+
+        const { data, error: dbErr } = await supabase
+          .from('patient_reports')
+          .insert([reportPayload])
+          .select()
+          .single();
+
+        if (!dbErr && data) {
+          const current = getLocalData('reports', []);
+          setLocalData('reports', [data, ...current]);
+          return data;
+        } else {
+          console.warn('Supabase report insert error:', dbErr);
+        }
       } catch (err) {
         console.warn('uploadReport error:', err);
       }
     }
 
+    // Local fallback
     const newReport = {
       id: `rep-${Date.now()}`,
-      patient_id: patientId || 'p-1',
-      report_name: metadata.report_name,
-      report_type: metadata.report_type,
-      report_date: metadata.report_date,
+      patient_id: realUUID || 'p-1',
+      medical_history_id: metadata.visit_id || null,
+      report_name: metadata.report_name || file?.name || 'Medical Report',
+      report_type: metadata.report_type || 'Blood Test',
+      report_date: metadata.report_date || new Date().toISOString().split('T')[0],
       file_name: file?.name || `${metadata.report_name}.pdf`,
       file_size: file?.size || 1450000,
       mime_type: file?.type || 'application/pdf',
-      file_url: 'https://images.unsplash.com/photo-1579154204601-01588f351e67?auto=format&fit=crop&w=1200&q=80',
+      file_url: fileUrl,
       uploaded_at: new Date().toISOString()
     };
+
+    const current = getLocalData('reports', []);
+    setLocalData('reports', [newReport, ...current]);
     return newReport;
   }
 };
