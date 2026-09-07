@@ -13,34 +13,44 @@ export const AuthProvider = ({ children }) => {
   useEffect(() => {
     const initAuth = async () => {
       try {
+        let authUser = null;
+
         if (isSupabaseConfigured && supabase) {
           const { data: { session } } = await supabase.auth.getSession();
           if (session?.user) {
+            authUser = session.user;
             setUser(session.user);
             const profile = await api.getPatientProfile(session.user.id);
             setPatient(profile);
           }
 
-          const { data: { subscription } } = supabase.auth.onAuthStateChange(
+          supabase.auth.onAuthStateChange(
             async (_event, session) => {
               if (session?.user) {
                 setUser(session.user);
+                localStorage.setItem('caretrack_auth_session', 'true');
                 const profile = await api.getPatientProfile(session.user.id);
                 setPatient(profile);
-              } else {
+              } else if (!localStorage.getItem('caretrack_auth_session')) {
                 setUser(null);
                 setPatient(null);
               }
               setLoading(false);
             }
           );
-          return () => subscription.unsubscribe();
-        } else {
-          // Check local simulated session
+        }
+
+        // Fallback or stored local session check
+        if (!authUser) {
           const storedSession = localStorage.getItem('caretrack_auth_session');
           if (storedSession) {
             const profile = await api.getPatientProfile();
-            setUser({ id: profile.auth_user_id, email: profile.email });
+            const fallbackUser = {
+              id: profile?.auth_user_id || profile?.id || 'patient-user-1',
+              email: profile?.email || 'patient@example.com',
+              phone: profile?.phone || '+91 98765 43210'
+            };
+            setUser(fallbackUser);
             setPatient(profile);
           }
         }
@@ -62,12 +72,14 @@ export const AuthProvider = ({ children }) => {
   const verifyPhoneOtp = async (phone, otp) => {
     setAuthError(null);
     const res = await api.verifyPhoneOtp(phone, otp);
-    if (!isSupabaseConfigured) {
-      localStorage.setItem('caretrack_auth_session', 'true');
-      const profile = await api.getPatientProfile();
-      setUser(res.user);
-      setPatient(profile);
-    }
+    
+    // Always persist authentication state
+    localStorage.setItem('caretrack_auth_session', 'true');
+    const profile = res.profile || (await api.getPatientProfile(res.user?.id));
+    const activeUser = res.user || { id: profile?.auth_user_id || 'phone-user', phone };
+    
+    setUser(activeUser);
+    setPatient(profile);
     return res;
   };
 
@@ -79,35 +91,39 @@ export const AuthProvider = ({ children }) => {
   const verifyEmailOtp = async (email, otp) => {
     setAuthError(null);
     const res = await api.verifyEmailOtp(email, otp);
-    if (!isSupabaseConfigured) {
-      localStorage.setItem('caretrack_auth_session', 'true');
-      const profile = await api.getPatientProfile();
-      setUser(res.user);
-      setPatient(profile);
-    }
+    
+    localStorage.setItem('caretrack_auth_session', 'true');
+    const profile = res.profile || (await api.getPatientProfile(res.user?.id));
+    const activeUser = res.user || { id: profile?.auth_user_id || 'email-user', email };
+    
+    setUser(activeUser);
+    setPatient(profile);
     return res;
   };
 
   const loginWithPassword = async (email, password) => {
     setAuthError(null);
     const res = await api.loginWithPassword(email, password);
-    if (!isSupabaseConfigured) {
-      localStorage.setItem('caretrack_auth_session', 'true');
-      const profile = await api.getPatientProfile();
-      setUser(res.user);
-      setPatient(profile);
-    }
+    
+    localStorage.setItem('caretrack_auth_session', 'true');
+    const profile = res.profile || (await api.getPatientProfile(res.user?.id));
+    const activeUser = res.user || { id: profile?.auth_user_id || 'email-user', email };
+    
+    setUser(activeUser);
+    setPatient(profile);
     return res;
   };
 
   const register = async (formData) => {
     setAuthError(null);
     const res = await api.registerPatient(formData);
-    if (!isSupabaseConfigured) {
-      localStorage.setItem('caretrack_auth_session', 'true');
-      setUser(res.user);
-      setPatient(res.profile);
-    }
+    
+    localStorage.setItem('caretrack_auth_session', 'true');
+    const activeUser = res.user || { id: res.profile?.auth_user_id || 'new-user', email: formData.email };
+    const profile = res.profile || (await api.getPatientProfile(activeUser.id));
+    
+    setUser(activeUser);
+    setPatient(profile);
     return res;
   };
 

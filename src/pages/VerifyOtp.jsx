@@ -84,7 +84,7 @@ export default function VerifyOtp() {
         await verifyEmailOtp(target, fullOtp);
       }
       showSuccess('Verification successful! Welcome to CareTrack.');
-      navigate('/dashboard');
+      navigate('/dashboard', { replace: true });
     } catch (err) {
       showError(err.message || 'Invalid or expired OTP. Please try again.');
     } finally {
