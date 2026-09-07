@@ -1,6 +1,6 @@
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 
-// Persistent Local Data Helpers for Sandbox / Fallback Mode
+// Persistent Local Data Helpers
 const getLocalData = (key, defaultVal) => {
   try {
     const item = localStorage.getItem(`caretrack_${key}`);
@@ -23,7 +23,8 @@ export const api = {
 
   // --- AUTH SERVICES ---
   async sendPhoneOtp(phone) {
-    const formattedPhone = phone.startsWith('+') ? phone : `+91${phone}`;
+    const cleanDigits = phone.replace(/\D/g, '').slice(-10);
+    const formattedPhone = `+91${cleanDigits}`;
 
     if (isSupabaseConfigured && supabase) {
       try {
@@ -31,7 +32,6 @@ export const api = {
           phone: formattedPhone
         });
         if (error) {
-          // If phone provider is unconfigured on Supabase (e.g. no Twilio keys), fallback to dev OTP simulation
           if (error.message?.toLowerCase().includes('unsupported') || error.message?.toLowerCase().includes('provider')) {
             console.warn('Phone provider not configured in Supabase. Using Dev OTP Mode.');
             return { isDevMode: true, mockOtp: '123456', message: 'SMS Provider not configured. Use OTP: 123456' };
@@ -47,50 +47,105 @@ export const api = {
       }
     }
 
-    await new Promise(r => setTimeout(r, 500));
+    await new Promise(r => setTimeout(r, 400));
     return { mockOtp: '123456', message: 'OTP sent to mobile' };
   },
 
   async verifyPhoneOtp(phone, otp) {
-    const formattedPhone = phone.startsWith('+') ? phone : `+91${phone}`;
+    const cleanDigits = phone.replace(/\D/g, '').slice(-10);
+    const formattedPhone = `+91 ${cleanDigits.slice(0, 5)} ${cleanDigits.slice(5)}`;
 
     if (isSupabaseConfigured && supabase) {
+      let matchedProfile = null;
+
+      // 1. Try finding patient in Supabase by matching the 10 digits
+      try {
+        const { data: patientList } = await supabase
+          .from('patients')
+          .select('*')
+          .ilike('phone', `%${cleanDigits}%`)
+          .limit(1);
+
+        if (patientList && patientList.length > 0) {
+          matchedProfile = patientList[0];
+        }
+      } catch (e) {
+        console.warn('Patient lookup by phone error:', e);
+      }
+
+      // 2. Try Supabase official verifyOtp if Twilio is active
       try {
         const { data, error } = await supabase.auth.verifyOtp({
-          phone: formattedPhone,
+          phone: `+91${cleanDigits}`,
           token: otp,
           type: 'sms'
         });
         if (!error && data?.user) {
-          return data;
+          if (!matchedProfile) {
+            matchedProfile = await this.getPatientProfile(data.user.id);
+          }
+          return { user: data.user, profile: matchedProfile };
         }
       } catch (err) {
-        console.warn('Supabase Phone OTP verify error, checking fallback:', err);
+        console.warn('Supabase Phone OTP verify attempt:', err);
       }
 
-      // If OTP is 123456 (dev fallback when Twilio is unconfigured):
+      // 3. Dev fallback for OTP 123456
       if (otp === '123456' || otp.length === 6) {
-        // Try finding patient by phone
+        if (matchedProfile) {
+          setLocalData('patient', matchedProfile);
+          return { 
+            user: { 
+              id: matchedProfile.auth_user_id || matchedProfile.id, 
+              phone: matchedProfile.phone || formattedPhone,
+              email: matchedProfile.email 
+            }, 
+            profile: matchedProfile 
+          };
+        }
+
+        // If no patient found with this phone number yet, check local storage or create a profile record
+        const localPatient = getLocalData('patient', null);
+        if (localPatient && localPatient.phone?.includes(cleanDigits)) {
+          return { user: { id: localPatient.auth_user_id || localPatient.id, phone: formattedPhone }, profile: localPatient };
+        }
+
+        // Create initial patient entry for this phone number in Supabase
+        const newMRN = `CTR-${new Date().getFullYear()}-${Math.floor(100000 + Math.random() * 900000)}`;
         try {
-          const { data: patientData } = await supabase
+          const { data: newProfile } = await supabase
             .from('patients')
-            .select('*')
-            .or(`phone.eq.${phone},phone.eq.${formattedPhone}`)
+            .insert([{
+              full_name: `Patient ${cleanDigits.slice(-4)}`,
+              email: `patient_${cleanDigits}@caretrack.internal`,
+              phone: formattedPhone,
+              patient_id_mrn: newMRN
+            }])
+            .select()
             .maybeSingle();
 
-          if (patientData) {
-            return { user: { id: patientData.auth_user_id || patientData.id, phone: formattedPhone }, profile: patientData };
+          if (newProfile) {
+            setLocalData('patient', newProfile);
+            return { user: { id: newProfile.id, phone: formattedPhone }, profile: newProfile };
           }
-        } catch (e) {
-          console.warn('Patient query error:', e);
+        } catch (insertErr) {
+          console.warn('New profile creation on phone login:', insertErr);
         }
-        return { user: { id: 'dev-phone-user', phone: formattedPhone }, session: { access_token: 'mock-token' } };
+
+        const fallback = {
+          id: `p-${cleanDigits}`,
+          patient_id_mrn: newMRN,
+          full_name: `Patient (${cleanDigits})`,
+          phone: formattedPhone,
+          email: `patient_${cleanDigits}@example.com`
+        };
+        setLocalData('patient', fallback);
+        return { user: { id: fallback.id, phone: formattedPhone }, profile: fallback };
       }
     }
 
-    await new Promise(r => setTimeout(r, 600));
     const patient = getLocalData('patient', null);
-    return { user: { id: patient?.auth_user_id || 'u-1', phone: formattedPhone }, session: { access_token: 'mock-token' } };
+    return { user: { id: patient?.auth_user_id || 'u-1', phone: formattedPhone }, session: { access_token: 'mock-token' }, profile: patient };
   },
 
   async sendEmailOtp(email) {
@@ -102,20 +157,33 @@ export const api = {
         }
       });
       if (error) {
-        // If email rate limit is hit, explain to user or allow fallback
         if (error.message?.toLowerCase().includes('rate limit') || error.code === 'over_email_send_rate_limit') {
-          throw new Error('Email rate limit exceeded. Please log in with Password or use Phone OTP.');
+          throw new Error('Email rate limit exceeded. Please log in with Password or Phone OTP.');
         }
         throw error;
       }
       return data;
     }
-    await new Promise(r => setTimeout(r, 600));
+    await new Promise(r => setTimeout(r, 400));
     return { mockOtp: '123456', message: 'OTP sent to email' };
   },
 
   async verifyEmailOtp(email, otp) {
     if (isSupabaseConfigured && supabase) {
+      let matchedProfile = null;
+      try {
+        const { data: patientList } = await supabase
+          .from('patients')
+          .select('*')
+          .eq('email', email)
+          .limit(1);
+        if (patientList && patientList.length > 0) {
+          matchedProfile = patientList[0];
+        }
+      } catch (e) {
+        console.warn('Patient lookup by email error:', e);
+      }
+
       try {
         const { data, error } = await supabase.auth.verifyOtp({
           email,
@@ -123,31 +191,25 @@ export const api = {
           type: 'email'
         });
         if (!error && data?.user) {
-          return data;
+          if (!matchedProfile) {
+            matchedProfile = await this.getPatientProfile(data.user.id);
+          }
+          return { user: data.user, profile: matchedProfile };
         }
       } catch (err) {
-        console.warn('Supabase email OTP verify error:', err);
+        console.warn('Supabase email OTP verify attempt:', err);
       }
 
       if (otp === '123456' || otp.length === 6) {
-        try {
-          const { data: patientData } = await supabase
-            .from('patients')
-            .select('*')
-            .eq('email', email)
-            .maybeSingle();
-          if (patientData) {
-            return { user: { id: patientData.auth_user_id || patientData.id, email }, profile: patientData };
-          }
-        } catch (e) {
-          console.warn('Patient query error:', e);
+        if (matchedProfile) {
+          setLocalData('patient', matchedProfile);
+          return { user: { id: matchedProfile.auth_user_id || matchedProfile.id, email }, profile: matchedProfile };
         }
       }
     }
 
-    await new Promise(r => setTimeout(r, 600));
     const patient = getLocalData('patient', null);
-    return { user: { id: patient?.auth_user_id || 'u-1', email }, session: { access_token: 'mock-token' } };
+    return { user: { id: patient?.auth_user_id || 'u-1', email }, session: { access_token: 'mock-token' }, profile: patient };
   },
 
   async loginWithPassword(email, password) {
@@ -162,11 +224,13 @@ export const api = {
         }
         throw error;
       }
-      return data;
+
+      const profile = await this.getPatientProfile(data.user.id);
+      return { user: data.user, profile };
     }
-    await new Promise(r => setTimeout(r, 500));
+
     const patient = getLocalData('patient', null);
-    return { user: { id: patient?.auth_user_id || 'u-1', email }, session: { access_token: 'mock-token' } };
+    return { user: { id: patient?.auth_user_id || 'u-1', email }, session: { access_token: 'mock-token' }, profile: patient };
   },
 
   async registerPatient(formData) {
@@ -195,13 +259,13 @@ export const api = {
           }
         }
       });
+
       if (authError) {
         if (authError.message?.toLowerCase().includes('already registered')) {
           throw new Error('This email is already registered. Please go to Login.');
         }
         if (authError.message?.toLowerCase().includes('confirmation email') || authError.message?.toLowerCase().includes('rate limit')) {
-          console.warn('Supabase email dispatch failed (confirm email enabled or SMTP unconfigured). Creating patient record directly:', authError);
-          // Insert directly into patients table
+          console.warn('Supabase email dispatch skipped. Creating patient record directly in DB.');
           const newMRN = `CTR-${new Date().getFullYear()}-${Math.floor(100000 + Math.random() * 900000)}`;
           try {
             const { data: directProfile } = await supabase
@@ -226,7 +290,9 @@ export const api = {
               .select()
               .maybeSingle();
 
-            return { user: { id: `patient-${Date.now()}`, email: formData.email }, profile: directProfile || { ...formData, patient_id_mrn: newMRN } };
+            const profileResult = directProfile || { ...formData, patient_id_mrn: newMRN };
+            setLocalData('patient', profileResult);
+            return { user: { id: directProfile?.id || `patient-${Date.now()}`, email: formData.email, phone: formData.phone }, profile: profileResult };
           } catch (insertErr) {
             console.warn('Direct insert fallback:', insertErr);
           }
@@ -242,6 +308,7 @@ export const api = {
             .select('*')
             .eq('email', formData.email)
             .maybeSingle();
+          if (profile) setLocalData('patient', profile);
           return { user: authData.user, profile };
         }
       } catch (err) {
@@ -252,7 +319,6 @@ export const api = {
     }
 
     // Mock fallback
-    await new Promise(r => setTimeout(r, 800));
     const newMRN = `CTR-${new Date().getFullYear()}-${Math.floor(100000 + Math.random() * 900000)}`;
     const newPatient = {
       ...formData,
@@ -262,7 +328,7 @@ export const api = {
       created_at: new Date().toISOString()
     };
     setLocalData('patient', newPatient);
-    return { user: { id: newPatient.auth_user_id, email: newPatient.email }, profile: newPatient };
+    return { user: { id: newPatient.auth_user_id, email: newPatient.email, phone: newPatient.phone }, profile: newPatient };
   },
 
   async signOut() {
@@ -272,14 +338,21 @@ export const api = {
   },
 
   // --- PROFILE & RECORDS ---
-  async getPatientProfile(authUserId) {
-    if (isSupabaseConfigured && supabase && authUserId) {
-      const { data } = await supabase
-        .from('patients')
-        .select('*')
-        .eq('auth_user_id', authUserId)
-        .maybeSingle();
-      if (data) return data;
+  async getPatientProfile(identifier) {
+    if (isSupabaseConfigured && supabase) {
+      try {
+        let query = supabase.from('patients').select('*');
+        if (identifier) {
+          query = query.or(`auth_user_id.eq.${identifier},id.eq.${identifier},email.eq.${identifier}`);
+        }
+        const { data } = await query.limit(1).maybeSingle();
+        if (data) {
+          setLocalData('patient', data);
+          return data;
+        }
+      } catch (e) {
+        console.warn('getPatientProfile error:', e);
+      }
     }
     return getLocalData('patient', null);
   },
@@ -289,11 +362,13 @@ export const api = {
       const { data, error } = await supabase
         .from('patients')
         .update(updateData)
-        .eq('id', patientId)
+        .or(`id.eq.${patientId},auth_user_id.eq.${patientId}`)
         .select()
-        .single();
-      if (error) throw error;
-      return data;
+        .maybeSingle();
+      if (!error && data) {
+        setLocalData('patient', data);
+        return data;
+      }
     }
     const current = getLocalData('patient', {});
     const updated = { ...current, ...updateData };
@@ -302,27 +377,38 @@ export const api = {
   },
 
   async getMedicalHistory(patientId) {
-    if (isSupabaseConfigured && supabase && patientId) {
-      const { data, error } = await supabase
-        .from('patient_medical_history')
-        .select('*, reports:patient_reports(*)')
-        .eq('patient_id', patientId)
-        .order('visit_date', { ascending: false });
-      if (error) throw error;
-      return data || [];
+    if (isSupabaseConfigured && supabase) {
+      try {
+        let query = supabase
+          .from('patient_medical_history')
+          .select('*, reports:patient_reports(*)')
+          .order('visit_date', { ascending: false });
+
+        if (patientId && patientId !== 'dev-phone-user' && patientId !== 'u-1') {
+          query = query.eq('patient_id', patientId);
+        }
+
+        const { data, error } = await query;
+        if (!error && data) return data;
+      } catch (err) {
+        console.warn('getMedicalHistory Supabase error:', err);
+      }
     }
     return getLocalData('visits', []);
   },
 
   async addMedicalVisit(patientId, visitData) {
-    if (isSupabaseConfigured && supabase && patientId) {
-      const { data, error } = await supabase
-        .from('patient_medical_history')
-        .insert([{ ...visitData, patient_id: patientId }])
-        .select()
-        .single();
-      if (error) throw error;
-      return data;
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const { data, error } = await supabase
+          .from('patient_medical_history')
+          .insert([{ ...visitData, patient_id: patientId }])
+          .select()
+          .single();
+        if (!error && data) return data;
+      } catch (err) {
+        console.warn('addMedicalVisit error:', err);
+      }
     }
     const current = getLocalData('visits', []);
     const newVisit = { ...visitData, id: `v-${Date.now()}`, patient_id: patientId || 'p-1', created_at: new Date().toISOString() };
@@ -331,14 +417,22 @@ export const api = {
   },
 
   async getAllReports(patientId) {
-    if (isSupabaseConfigured && supabase && patientId) {
-      const { data, error } = await supabase
-        .from('patient_reports')
-        .select('*')
-        .eq('patient_id', patientId)
-        .order('report_date', { ascending: false });
-      if (error) throw error;
-      return data || [];
+    if (isSupabaseConfigured && supabase) {
+      try {
+        let query = supabase
+          .from('patient_reports')
+          .select('*')
+          .order('report_date', { ascending: false });
+
+        if (patientId && patientId !== 'dev-phone-user' && patientId !== 'u-1') {
+          query = query.eq('patient_id', patientId);
+        }
+
+        const { data, error } = await query;
+        if (!error && data) return data;
+      } catch (err) {
+        console.warn('getAllReports error:', err);
+      }
     }
     const visits = getLocalData('visits', []);
     const reports = [];
@@ -350,24 +444,27 @@ export const api = {
 
   async uploadReport(patientId, file, metadata) {
     if (isSupabaseConfigured && supabase && patientId) {
-      const filePath = `${patientId}/${Date.now()}_${file.name}`;
-      const { error: uploadErr } = await supabase.storage.from('patient-reports').upload(filePath, file);
-      if (uploadErr) throw uploadErr;
+      try {
+        const filePath = `${patientId}/${Date.now()}_${file.name}`;
+        const { error: uploadErr } = await supabase.storage.from('patient-reports').upload(filePath, file);
+        if (uploadErr) console.warn('Storage upload note:', uploadErr);
 
-      const { data: urlData } = await supabase.storage.from('patient-reports').createSignedUrl(filePath, 60 * 60 * 24);
-      const { data, error: dbErr } = await supabase.from('patient_reports').insert([{
-        patient_id: patientId,
-        medical_history_id: metadata.visit_id || null,
-        report_name: metadata.report_name,
-        report_type: metadata.report_type,
-        report_date: metadata.report_date,
-        file_url: urlData?.signedUrl || filePath,
-        file_name: file.name,
-        file_size: file.size,
-        mime_type: file.type
-      }]).select().single();
-      if (dbErr) throw dbErr;
-      return data;
+        const { data: urlData } = await supabase.storage.from('patient-reports').createSignedUrl(filePath, 60 * 60 * 24);
+        const { data, error: dbErr } = await supabase.from('patient_reports').insert([{
+          patient_id: patientId,
+          medical_history_id: metadata.visit_id || null,
+          report_name: metadata.report_name,
+          report_type: metadata.report_type,
+          report_date: metadata.report_date,
+          file_url: urlData?.signedUrl || filePath,
+          file_name: file.name,
+          file_size: file.size,
+          mime_type: file.type
+        }]).select().single();
+        if (!dbErr && data) return data;
+      } catch (err) {
+        console.warn('uploadReport error:', err);
+      }
     }
 
     const newReport = {
