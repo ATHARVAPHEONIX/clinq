@@ -11,6 +11,7 @@ import {
   AlertCircle, 
   UserPlus, 
   MessageCircle, 
+  Smartphone,
   RefreshCw, 
   CheckCircle2, 
   Edit2
@@ -19,7 +20,7 @@ import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 
 export default function Login() {
-  const [authMethod, setAuthMethod] = useState('whatsapp'); // 'whatsapp' or 'email'
+  const [authMethod, setAuthMethod] = useState('whatsapp'); // 'whatsapp', 'sms', or 'email'
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -33,10 +34,11 @@ export default function Login() {
 
   // OTP Verification View State
   const [otpStep, setOtpStep] = useState('input'); // 'input' or 'verify'
-  const [otpType, setOtpType] = useState('whatsapp'); // 'whatsapp' or 'email'
+  const [otpType, setOtpType] = useState('whatsapp'); // 'whatsapp', 'sms', or 'email'
   const [otpDigits, setOtpDigits] = useState(['', '', '', '', '', '']);
   const [activeOtp, setActiveOtp] = useState('');
   const [whatsappUrl, setWhatsappUrl] = useState('');
+  const [smsUrl, setSmsUrl] = useState('');
   const [timer, setTimer] = useState(45);
   const [canResend, setCanResend] = useState(false);
   const inputRefs = useRef([]);
@@ -44,6 +46,8 @@ export default function Login() {
   const { 
     loginWithWhatsApp, 
     verifyWhatsAppOtp, 
+    loginWithSms,
+    verifySmsOtp,
     loginWithEmail, 
     verifyEmailOtp, 
     loginWithPassword 
@@ -68,7 +72,7 @@ export default function Login() {
 
   const maskTarget = (val, type) => {
     if (!val) return '******';
-    if (type === 'whatsapp') {
+    if (type === 'whatsapp' || type === 'sms') {
       const clean = val.replace(/\D/g, '');
       return `+91 ******${clean.slice(-4)}`;
     }
@@ -120,7 +124,49 @@ export default function Login() {
     }
   };
 
-  // --- 2. Email Password Step 1: Continue ---
+  // --- 2. SMS OTP Request ---
+  const handleSmsSubmit = async (e) => {
+    if (e) e.preventDefault();
+    setErrorMessage('');
+    const cleanDigits = phone.replace(/\D/g, '');
+    if (!cleanDigits || cleanDigits.length !== 10) {
+      const msg = 'Please enter a valid 10-digit mobile number.';
+      setErrorMessage(msg);
+      showError(msg);
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const res = await loginWithSms(phone);
+      setActiveOtp(res.otp || '');
+      setSmsUrl(res.smsUrl || '');
+      showSuccess(res.message || 'OTP sent via SMS.');
+      setOtpType('sms');
+      setOtpStep('verify');
+      setTimer(45);
+      setCanResend(false);
+      setOtpDigits(['', '', '', '', '', '']);
+      
+      if (res.smsUrl) {
+        try {
+          window.open(res.smsUrl, '_blank');
+        } catch (e) {
+          console.warn('SMS intent launch note:', e);
+        }
+      }
+
+      setTimeout(() => inputRefs.current[0]?.focus(), 150);
+    } catch (err) {
+      const msg = err.message || "We couldn't send the SMS OTP. Please try again.";
+      setErrorMessage(msg);
+      showError(msg);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // --- 3. Email Password Step 1: Continue ---
   const handleEmailContinue = (e) => {
     e.preventDefault();
     setErrorMessage('');
@@ -134,7 +180,7 @@ export default function Login() {
     setEmailStep('password');
   };
 
-  // --- 3. Email Password Step 2: Login ---
+  // --- 4. Email Password Step 2: Login ---
   const handlePasswordLogin = async (e) => {
     e.preventDefault();
     setErrorMessage('');
@@ -160,7 +206,7 @@ export default function Login() {
     }
   };
 
-  // --- 4. Email OTP Request ---
+  // --- 5. Email OTP Request ---
   const handleEmailOtpSubmit = async (e) => {
     e.preventDefault();
     setErrorMessage('');
@@ -239,6 +285,8 @@ export default function Login() {
       const target = otpType === 'email' ? email : phone;
       if (otpType === 'whatsapp') {
         await verifyWhatsAppOtp(target, fullOtp);
+      } else if (otpType === 'sms') {
+        await verifySmsOtp(target, fullOtp);
       } else {
         await verifyEmailOtp(target, fullOtp);
       }
@@ -266,6 +314,18 @@ export default function Login() {
         if (res.whatsappUrl) {
           try {
             window.open(res.whatsappUrl, '_blank');
+          } catch (e) {
+            console.warn('Popup blocked:', e);
+          }
+        }
+      } else if (otpType === 'sms') {
+        const res = await loginWithSms(phone);
+        setActiveOtp(res.otp || '');
+        setSmsUrl(res.smsUrl || '');
+        showSuccess(`New OTP sent via SMS: ${res.otp || ''}`);
+        if (res.smsUrl) {
+          try {
+            window.open(res.smsUrl, '_blank');
           } catch (e) {
             console.warn('Popup blocked:', e);
           }
@@ -305,7 +365,7 @@ export default function Login() {
         </div>
 
         <h2 className="text-center text-xl font-bold text-[#0B1C30]">
-          {otpStep === 'verify' ? (otpType === 'whatsapp' ? 'Verify WhatsApp OTP' : 'Verify Email OTP') : 'Patient Login'}
+          {otpStep === 'verify' ? (otpType === 'whatsapp' ? 'Verify WhatsApp OTP' : otpType === 'sms' ? 'Verify SMS OTP' : 'Verify Email OTP') : 'Patient Login'}
         </h2>
         <p className="mt-1 text-center text-xs text-[#64748B]">
           {otpStep === 'verify' 
@@ -340,22 +400,37 @@ export default function Login() {
           {/* STAGE 1: INPUT CREDENTIALS */}
           {otpStep === 'input' && (
             <>
-              {/* Segmented Method Toggle: WhatsApp vs Email */}
-              <div className="flex p-1 bg-slate-100 rounded-xl mb-6">
+              {/* Segmented Method Toggle: WhatsApp vs SMS vs Email */}
+              <div className="flex p-1 bg-slate-100 rounded-xl mb-6 gap-1">
                 <button
                   type="button"
                   onClick={() => {
                     setAuthMethod('whatsapp');
                     setErrorMessage('');
                   }}
-                  className={`flex-1 py-2.5 text-xs font-semibold rounded-lg transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                  className={`flex-1 py-2 text-xs font-semibold rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
                     authMethod === 'whatsapp'
                       ? 'bg-white text-[#0F766E] shadow-xs'
                       : 'text-[#64748B] hover:text-[#0B1C30]'
                   }`}
                 >
-                  <MessageCircle className="w-4 h-4 text-[#25D366]" />
-                  <span>WhatsApp Login</span>
+                  <MessageCircle className="w-3.5 h-3.5 text-[#25D366]" />
+                  <span>WhatsApp</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAuthMethod('sms');
+                    setErrorMessage('');
+                  }}
+                  className={`flex-1 py-2 text-xs font-semibold rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                    authMethod === 'sms'
+                      ? 'bg-white text-[#0F766E] shadow-xs'
+                      : 'text-[#64748B] hover:text-[#0B1C30]'
+                  }`}
+                >
+                  <Smartphone className="w-3.5 h-3.5 text-[#0284C7]" />
+                  <span>SMS OTP</span>
                 </button>
                 <button
                   type="button"
@@ -363,14 +438,14 @@ export default function Login() {
                     setAuthMethod('email');
                     setErrorMessage('');
                   }}
-                  className={`flex-1 py-2.5 text-xs font-semibold rounded-lg transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                  className={`flex-1 py-2 text-xs font-semibold rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
                     authMethod === 'email'
                       ? 'bg-white text-[#0F766E] shadow-xs'
                       : 'text-[#64748B] hover:text-[#0B1C30]'
                   }`}
                 >
-                  <Mail className="w-4 h-4" />
-                  <span>Email Login</span>
+                  <Mail className="w-3.5 h-3.5" />
+                  <span>Email</span>
                 </button>
               </div>
 
@@ -428,7 +503,61 @@ export default function Login() {
                 </form>
               )}
 
-              {/* OPTION 2: Email Login (Default: Email -> Password) */}
+              {/* OPTION 2: SMS OTP Login */}
+              {authMethod === 'sms' && (
+                <form onSubmit={handleSmsSubmit} className="space-y-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-[#0B1C30] uppercase tracking-wider mb-1.5">
+                      Mobile Number for SMS OTP
+                    </label>
+                    <div className="flex gap-2">
+                      <div className="w-20 shrink-0">
+                        <select className="input-field bg-slate-50 font-medium text-xs text-center">
+                          <option>+91</option>
+                          <option>+1</option>
+                          <option>+44</option>
+                          <option>+971</option>
+                        </select>
+                      </div>
+                      <input
+                        type="tel"
+                        placeholder="Enter 10-digit mobile number"
+                        className="input-field flex-1 text-sm font-medium"
+                        value={phone}
+                        onChange={(e) => {
+                          clearError();
+                          setPhone(e.target.value.replace(/\D/g, '').slice(0, 10));
+                        }}
+                        required
+                        autoFocus
+                      />
+                    </div>
+                    <p className="mt-1.5 text-[11px] text-[#64748B] flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-[#0284C7] inline-block shrink-0" />
+                      <span>We will send a 6-digit verification code to your phone via SMS.</span>
+                    </p>
+                  </div>
+
+                  {/* Primary SMS OTP Button */}
+                  <button
+                    type="submit"
+                    disabled={loading}
+                    className="w-full py-2.5 px-4 rounded-xl bg-[#0284C7] hover:bg-[#0369a1] active:scale-[0.99] text-white font-bold text-xs shadow-md shadow-sky-600/15 transition-all flex items-center justify-center gap-2 cursor-pointer mt-2"
+                  >
+                    {loading ? (
+                      <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    ) : (
+                      <>
+                        <Smartphone className="w-4 h-4" />
+                        <span>Send OTP via SMS</span>
+                        <ArrowRight className="w-4 h-4" />
+                      </>
+                    )}
+                  </button>
+                </form>
+              )}
+
+              {/* OPTION 3: Email Login (Default: Email -> Password) */}
               {authMethod === 'email' && (
                 <div className="space-y-4">
                   {emailMode === 'password' ? (
@@ -461,20 +590,6 @@ export default function Login() {
                           <span>Continue</span>
                           <ArrowRight className="w-4 h-4" />
                         </button>
-
-                        {/* Secondary Option: Login through OTP */}
-                        <div className="text-center pt-2">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              clearError();
-                              setEmailMode('otp');
-                            }}
-                            className="text-xs text-[#0F766E] hover:underline font-medium cursor-pointer"
-                          >
-                            Login through OTP
-                          </button>
-                        </div>
                       </form>
                     ) : (
                       // Step 2: Enter Password
@@ -533,20 +648,6 @@ export default function Login() {
                             </>
                           )}
                         </button>
-
-                        {/* Secondary Option: Login through OTP */}
-                        <div className="text-center pt-2">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              clearError();
-                              setEmailMode('otp');
-                            }}
-                            className="text-xs text-[#0F766E] hover:underline font-medium cursor-pointer"
-                          >
-                            Login through OTP
-                          </button>
-                        </div>
                       </form>
                     )
                   ) : (
@@ -617,7 +718,7 @@ export default function Login() {
                   Code sent to: <strong>{maskTarget(otpType === 'email' ? email : phone, otpType)}</strong>
                 </span>
                 <span className="badge badge-teal text-[10px] font-bold uppercase">
-                  {otpType === 'whatsapp' ? 'WhatsApp' : 'Email'}
+                  {otpType === 'whatsapp' ? 'WhatsApp' : otpType === 'sms' ? 'SMS' : 'Email'}
                 </span>
               </div>
 
@@ -662,6 +763,52 @@ export default function Login() {
                         className="flex-1 py-2 px-3 bg-white border border-emerald-300 hover:bg-emerald-100/60 text-emerald-900 font-bold rounded-lg text-center flex items-center justify-center gap-1.5 shadow-xs transition-all text-xs cursor-pointer"
                       >
                         <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                        <span>Auto-Fill OTP</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Interactive SMS Delivery Card */}
+              {otpType === 'sms' && (
+                <div className="p-3.5 bg-sky-50/80 border border-sky-200 rounded-xl text-xs space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1.5 font-semibold text-sky-950">
+                      <Smartphone className="w-4 h-4 text-[#0284C7]" />
+                      <span>SMS OTP Verification</span>
+                    </div>
+                    {activeOtp && (
+                      <span className="px-2 py-0.5 rounded-md bg-sky-200/70 text-sky-900 text-[11px] font-mono font-bold tracking-wider">
+                        {activeOtp}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[#0369A1] text-[11px] leading-relaxed">
+                    6-digit SMS OTP dispatched to your phone. Open SMS messages or click Auto-Fill below.
+                  </p>
+                  <div className="flex items-center gap-2 pt-0.5">
+                    {smsUrl && (
+                      <a
+                        href={smsUrl}
+                        className="flex-1 py-2 px-3 bg-[#0284C7] hover:bg-[#0369a1] active:scale-[0.99] text-white font-bold rounded-lg text-center flex items-center justify-center gap-1.5 shadow-xs transition-all text-xs"
+                      >
+                        <Smartphone className="w-3.5 h-3.5" />
+                        <span>Open SMS App</span>
+                      </a>
+                    )}
+                    {activeOtp && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const digits = activeOtp.split('');
+                          setOtpDigits(digits);
+                          showSuccess('OTP filled!');
+                          inputRefs.current[5]?.focus();
+                        }}
+                        className="flex-1 py-2 px-3 bg-white border border-sky-300 hover:bg-sky-100/60 text-sky-900 font-bold rounded-lg text-center flex items-center justify-center gap-1.5 shadow-xs transition-all text-xs cursor-pointer"
+                      >
+                        <CheckCircle2 className="w-3.5 h-3.5 text-sky-600" />
                         <span>Auto-Fill OTP</span>
                       </button>
                     )}

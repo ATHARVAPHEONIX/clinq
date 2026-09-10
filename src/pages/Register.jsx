@@ -47,7 +47,9 @@ export default function Register() {
     allergies: '',
     medical_conditions: '',
     medications: '',
-    surgeries: ''
+    surgeries: '',
+    // Optional Ayushman Bharat ABHA ID
+    abha_id: ''
   });
 
   const handleChange = (e) => {
@@ -344,6 +346,45 @@ export default function Register() {
                   />
                 </div>
               </div>
+
+              {/* Optional Ayushman Bharat ABHA Card Section */}
+              <div className="p-4 bg-gradient-to-r from-orange-50/70 via-white to-emerald-50/70 border border-orange-200/80 rounded-xl space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="w-6 h-6 rounded-md bg-gradient-to-r from-[#FF9933] via-white to-[#138808] p-0.5 flex items-center justify-center shadow-xs">
+                      <div className="w-full h-full bg-white rounded-[4px] flex items-center justify-center font-bold text-[9px] text-[#0F766E]">
+                        ABHA
+                      </div>
+                    </div>
+                    <div>
+                      <span className="font-bold text-xs text-[#0B1C30]">Ayushman Bharat Health Account (ABHA ID)</span>
+                      <span className="text-[10px] text-[#0F766E] font-medium ml-2 bg-teal-50 px-1.5 py-0.5 rounded border border-teal-200">
+                        Optional
+                      </span>
+                    </div>
+                  </div>
+                  <a
+                    href="https://abha.abdm.gov.in/abha/v3/register"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-[11px] text-[#0F766E] hover:underline font-semibold flex items-center gap-1 cursor-pointer"
+                  >
+                    <span>Create ABHA</span>
+                    <ArrowRight className="w-3 h-3" />
+                  </a>
+                </div>
+                <input
+                  type="text"
+                  name="abha_id"
+                  value={formData.abha_id}
+                  onChange={handleChange}
+                  placeholder="e.g. 14-digit ABHA Number (12-3456-7890-1234) or username@abdm"
+                  className="input-field bg-white text-xs font-mono font-medium"
+                />
+                <p className="text-[10px] text-[#64748B]">
+                  Link your official Ayushman Bharat Digital Mission (ABDM) Health ID for unified national healthcare access.
+                </p>
+              </div>
             </div>
           )}
 
@@ -477,6 +518,7 @@ export default function Register() {
                   <div><span className="text-[#64748B]">Blood Group:</span> <strong className="text-[#0B1C30]">{formData.blood_group}</strong></div>
                   <div><span className="text-[#64748B]">City/State:</span> <strong className="text-[#0B1C30]">{formData.city}, {formData.state}</strong></div>
                   <div><span className="text-[#64748B]">Emergency Contact:</span> <strong className="text-[#0B1C30]">{formData.emergency_contact_name} ({formData.emergency_contact_phone})</strong></div>
+                  <div><span className="text-[#64748B]">ABHA Health ID:</span> <strong className="text-[#0F766E] font-mono">{formData.abha_id || 'Not linked'}</strong></div>
                   <div><span className="text-[#64748B]">Allergies:</span> <strong className="text-[#0B1C30]">{formData.allergies || 'None specified'}</strong></div>
                 </div>
               </div>

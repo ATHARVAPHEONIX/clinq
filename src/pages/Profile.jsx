@@ -12,7 +12,11 @@ import {
   CheckCircle2, 
   X, 
   Save,
-  Activity
+  Activity,
+  CreditCard,
+  ExternalLink,
+  Sparkles,
+  Award
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
@@ -34,6 +38,7 @@ export default function Profile() {
     city: patient?.city || '',
     state: patient?.state || '',
     pincode: patient?.pincode || '',
+    abha_id: patient?.abha_id || '',
     emergency_contact_name: patient?.emergency_contact_name || '',
     emergency_contact_relation: patient?.emergency_contact_relation || '',
     emergency_contact_phone: patient?.emergency_contact_phone || '',
@@ -55,6 +60,7 @@ export default function Profile() {
         city: patient.city || '',
         state: patient.state || '',
         pincode: patient.pincode || '',
+        abha_id: patient.abha_id || '',
         emergency_contact_name: patient.emergency_contact_name || '',
         emergency_contact_relation: patient.emergency_contact_relation || '',
         emergency_contact_phone: patient.emergency_contact_phone || '',
@@ -135,6 +141,128 @@ export default function Profile() {
           <Edit3 className="w-4 h-4" />
           <span>Edit Profile</span>
         </button>
+      </div>
+
+      {/* AYUSHMAN BHARAT DIGITAL HEALTH CARD (ABHA) */}
+      <div className="relative overflow-hidden rounded-2xl border-2 border-orange-200/90 bg-gradient-to-br from-white via-amber-50/20 to-orange-50/40 shadow-md">
+        {/* Tricolor National Accent Banner */}
+        <div className="h-1.5 w-full bg-gradient-to-r from-[#FF9933] via-white to-[#138808]" />
+
+        <div className="p-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-orange-100">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-orange-500 via-amber-500 to-teal-600 p-0.5 shadow-sm">
+                <div className="w-full h-full bg-white rounded-[10px] flex flex-col items-center justify-center p-1">
+                  <div className="w-2 h-0.5 bg-[#FF9933] mb-0.5 rounded-full" />
+                  <span className="font-extrabold text-[11px] tracking-tight text-[#0F766E] leading-none">ABHA</span>
+                  <div className="w-2 h-0.5 bg-[#138808] mt-0.5 rounded-full" />
+                </div>
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h2 className="font-bold text-base text-[#0B1C30]">Ayushman Bharat Digital Health Card</h2>
+                  <span className="badge bg-orange-100 text-orange-800 border-orange-200 text-[10px] font-bold">
+                    ABDM • NHA
+                  </span>
+                </div>
+                <p className="text-xs text-[#64748B]">
+                  National Digital Health Mission (NDHM) • Government of India
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <a
+                href="https://abha.abdm.gov.in/abha/v3/register"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="btn btn-secondary !text-xs !py-1.5 !px-3 flex items-center gap-1.5 text-orange-700 hover:text-orange-800 bg-orange-50/80 hover:bg-orange-100/80 border-orange-200"
+              >
+                <ExternalLink className="w-3.5 h-3.5" />
+                <span>ABHA Portal</span>
+              </a>
+              {!patient?.abha_id && (
+                <button
+                  onClick={() => setIsEditing(true)}
+                  className="btn btn-primary !text-xs !py-1.5 !px-3 flex items-center gap-1.5 bg-[#0F766E] hover:bg-[#0D655E]"
+                >
+                  <Edit3 className="w-3.5 h-3.5" />
+                  <span>Link ABHA ID</span>
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* ABHA Card Content */}
+          <div className="mt-5 grid grid-cols-1 md:grid-cols-3 gap-5">
+            {/* Health Account Number */}
+            <div className="md:col-span-2 p-4 rounded-xl bg-white/90 border border-orange-200/80 shadow-xs flex flex-col justify-between">
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-[11px] font-semibold uppercase tracking-wider text-[#64748B] flex items-center gap-1.5">
+                    <CreditCard className="w-3.5 h-3.5 text-orange-600" />
+                    ABHA ID / Health Account Number
+                  </span>
+                  {patient?.abha_id ? (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 text-[10px] font-bold">
+                      <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                      ABDM Linked
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-50 border border-amber-200 text-amber-700 text-[10px] font-medium">
+                      Not Linked (Optional)
+                    </span>
+                  )}
+                </div>
+
+                <div className="py-2">
+                  {patient?.abha_id ? (
+                    <div className="font-mono text-xl sm:text-2xl font-bold tracking-wider text-[#0B1C30] bg-slate-50 px-3 py-2 rounded-lg border border-slate-200">
+                      {patient.abha_id}
+                    </div>
+                  ) : (
+                    <div className="p-3 bg-slate-50/80 rounded-lg border border-dashed border-slate-200 text-xs text-slate-500">
+                      No Ayushman Bharat Health Account linked yet. You can create a 14-digit ABHA ID using Aadhaar or Mobile on the official portal, or link your existing ABHA ID.
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-3 pt-3 border-t border-slate-100 text-xs">
+                <div>
+                  <span className="text-slate-400 block text-[10px]">Beneficiary</span>
+                  <span className="font-semibold text-slate-800 truncate block">{patientName}</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 block text-[10px]">Gender</span>
+                  <span className="font-semibold text-slate-800">{patient?.gender || '—'}</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 block text-[10px]">DOB</span>
+                  <span className="font-semibold text-slate-800">{patient?.date_of_birth || '—'}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Quick ABHA Benefits Card */}
+            <div className="p-4 rounded-xl bg-gradient-to-br from-teal-900 to-[#0B1C30] text-white shadow-xs flex flex-col justify-between">
+              <div>
+                <div className="flex items-center gap-2 text-teal-300 font-semibold text-xs mb-2">
+                  <ShieldCheck className="w-4 h-4" />
+                  <span>ABDM Interoperability</span>
+                </div>
+                <p className="text-[11px] text-slate-200 leading-relaxed">
+                  Your ABHA card enables seamless digital sharing of prescriptions, lab reports, and medical history with authorized hospitals across India.
+                </p>
+              </div>
+
+              <div className="pt-3 border-t border-teal-800/60 mt-3 flex items-center justify-between text-[10px] text-teal-200">
+                <span>National Health Authority</span>
+                <span className="font-mono">ABDM v3.0</span>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* Main Details Sections */}
@@ -279,6 +407,36 @@ export default function Profile() {
                   <label className="block font-semibold mb-1">Phone Number</label>
                   <input type="tel" name="phone" value={editForm.phone} onChange={handleChange} className="input-field" required />
                 </div>
+              </div>
+
+              {/* Ayushman Bharat ABHA ID in Edit Modal */}
+              <div className="p-3 bg-gradient-to-r from-orange-50/80 via-white to-emerald-50/80 border border-orange-200 rounded-xl space-y-1">
+                <div className="flex items-center justify-between">
+                  <label className="block font-semibold text-slate-800 flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-[#FF9933]" />
+                    <span>Ayushman Bharat Health Account (ABHA ID / Number)</span>
+                  </label>
+                  <a
+                    href="https://abha.abdm.gov.in/abha/v3/register"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-[11px] text-orange-600 hover:text-orange-700 font-medium flex items-center gap-1"
+                  >
+                    <span>Create on Govt Portal</span>
+                    <ExternalLink className="w-3 h-3" />
+                  </a>
+                </div>
+                <input
+                  type="text"
+                  name="abha_id"
+                  value={editForm.abha_id}
+                  onChange={handleChange}
+                  placeholder="e.g. 14-digit ABHA (12-3456-7890-1234) or username@abdm"
+                  className="input-field font-mono"
+                />
+                <p className="text-[10px] text-slate-500">
+                  Optional. Linked with Ayushman Bharat Digital Mission (ABDM) for pan-India healthcare interoperability.
+                </p>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">

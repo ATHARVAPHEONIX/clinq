@@ -408,6 +408,216 @@ export const api = {
     };
   },
 
+  // --- SMS AUTH SERVICES ---
+  async sendSmsOtp(phone) {
+    const cleanDigits = phone.replace(/\D/g, '').slice(-10);
+    if (!cleanDigits || cleanDigits.length !== 10) {
+      throw new Error('Please enter a valid 10-digit mobile number.');
+    }
+
+    const formattedPhone = `+91 ${cleanDigits.slice(0, 5)} ${cleanDigits.slice(5)}`;
+    const otp = generateSecureOTP();
+    const expiresAt = Date.now() + 10 * 60 * 1000; // 10 minutes expiry
+
+    // Save pending SMS OTP record
+    const otpRecord = {
+      phone: cleanDigits,
+      formattedPhone,
+      otp,
+      expiresAt,
+      createdAt: Date.now(),
+      attempts: 0
+    };
+    setLocalData(`sms_otp_${cleanDigits}`, otpRecord);
+    setLocalData('active_sms_otp', otpRecord);
+
+    // 1. If Supabase Phone Auth is configured
+    if (isSupabaseConfigured && supabase) {
+      try {
+        await supabase.auth.signInWithOtp({
+          phone: `+91${cleanDigits}`
+        });
+      } catch (e) {
+        console.warn('Supabase SMS auth note:', e);
+      }
+    }
+
+    // 2. If configured external SMS API Gateway URL exists, dispatch message
+    const customSmsApiUrl = import.meta.env.VITE_SMS_API_URL;
+    const customSmsToken = import.meta.env.VITE_SMS_API_TOKEN;
+    if (customSmsApiUrl) {
+      try {
+        await fetch(customSmsApiUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(customSmsToken ? { 'Authorization': `Bearer ${customSmsToken}` } : {})
+          },
+          body: JSON.stringify({
+            phone: `91${cleanDigits}`,
+            message: `Your ClinQ OTP is ${otp}. Valid for 10 minutes. Do not share this OTP.`
+          })
+        });
+      } catch (apiErr) {
+        console.warn('Custom SMS gateway dispatch note:', apiErr);
+      }
+    }
+
+    const smsUrl = `sms:+91${cleanDigits}?body=${encodeURIComponent(`Your ClinQ / CareTrack OTP is ${otp}. Valid for 10 minutes.`)}`;
+
+    return {
+      success: true,
+      otp,
+      smsUrl,
+      formattedPhone,
+      message: `OTP sent via SMS to ${formattedPhone}`
+    };
+  },
+
+  async verifySmsOtp(phone, enteredOtp) {
+    const cleanDigits = phone.replace(/\D/g, '').slice(-10);
+    const formattedPhone = `+91 ${cleanDigits.slice(0, 5)} ${cleanDigits.slice(5)}`;
+    
+    if (!cleanDigits || cleanDigits.length !== 10) {
+      throw new Error('Please enter a valid 10-digit mobile number.');
+    }
+
+    const trimmedOtp = (enteredOtp || '').toString().trim();
+    if (!trimmedOtp || trimmedOtp.length !== 6) {
+      throw new Error('Please enter all 6 digits of the OTP code.');
+    }
+
+    const pendingRecord = getLocalData(`sms_otp_${cleanDigits}`, null) || getLocalData('active_sms_otp', null);
+
+    // Expiration check
+    if (pendingRecord && pendingRecord.expiresAt && Date.now() > pendingRecord.expiresAt) {
+      removeLocalData(`sms_otp_${cleanDigits}`);
+      removeLocalData('active_sms_otp');
+      throw new Error('This OTP has expired. Please request a new OTP.');
+    }
+
+    let isVerified = false;
+
+    // 1. Verify against Supabase Auth if supported
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const { data, error } = await supabase.auth.verifyOtp({
+          phone: `+91${cleanDigits}`,
+          token: trimmedOtp,
+          type: 'sms'
+        });
+
+        if (!error && data?.user) {
+          isVerified = true;
+        }
+      } catch (err) {
+        console.warn('Supabase SMS verification attempt:', err);
+      }
+    }
+
+    // 2. Verify against secure pending OTP record
+    if (!isVerified) {
+      if (pendingRecord && pendingRecord.otp === trimmedOtp && pendingRecord.phone === cleanDigits) {
+        isVerified = true;
+      }
+    }
+
+    if (!isVerified) {
+      if (pendingRecord) {
+        pendingRecord.attempts = (pendingRecord.attempts || 0) + 1;
+        setLocalData(`sms_otp_${cleanDigits}`, pendingRecord);
+      }
+      throw new Error('Invalid OTP. Please check the OTP and try again.');
+    }
+
+    // Clean up pending SMS OTP
+    removeLocalData(`sms_otp_${cleanDigits}`);
+    removeLocalData('active_sms_otp');
+
+    // Retrieve or provision patient profile
+    let matchedProfile = null;
+    if (isSupabaseConfigured && supabase) {
+      const p1 = cleanDigits.slice(0, 5);
+      const p2 = cleanDigits.slice(5);
+      try {
+        const { data: patientList } = await supabase
+          .from('patients')
+          .select('*')
+          .or(`phone.ilike.%${cleanDigits}%,phone.ilike.%${p1}%${p2}%,phone.ilike.%${p1} ${p2}%,phone.ilike.%+91%${p1}%`)
+          .limit(1);
+
+        if (patientList && patientList.length > 0) {
+          matchedProfile = patientList[0];
+        }
+      } catch (e) {
+        console.warn('Supabase query by phone note:', e);
+      }
+    }
+
+    if (!matchedProfile) {
+      matchedProfile = this.findLocalPatient({ phone: cleanDigits });
+    }
+
+    if (matchedProfile) {
+      setLocalData('patient', matchedProfile);
+      saveToDirectory(matchedProfile);
+      return {
+        user: {
+          id: matchedProfile.auth_user_id || matchedProfile.id,
+          phone: matchedProfile.phone || formattedPhone,
+          email: matchedProfile.email,
+          user_metadata: { full_name: matchedProfile.full_name }
+        },
+        profile: matchedProfile
+      };
+    }
+
+    // Auto-provision initial clean profile for newly verified SMS number
+    const newMRN = generateUniqueMRN();
+    const fallbackProfile = {
+      id: `p-${cleanDigits}`,
+      full_name: `Patient (${cleanDigits.slice(-4)})`,
+      phone: formattedPhone,
+      email: `patient_${cleanDigits}@caretrack.internal`,
+      patient_id_mrn: newMRN,
+      gender: 'Male',
+      blood_group: 'O+',
+      allergies: '',
+      medical_conditions: '',
+      address: '',
+      city: '',
+      state: '',
+      pincode: ''
+    };
+
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const { data: inserted } = await supabase
+          .from('patients')
+          .insert([fallbackProfile])
+          .select()
+          .maybeSingle();
+        if (inserted) {
+          fallbackProfile.id = inserted.id;
+        }
+      } catch (insErr) {
+        console.warn('Profile creation fallback note:', insErr);
+      }
+    }
+
+    setLocalData('patient', fallbackProfile);
+    saveToDirectory(fallbackProfile);
+    return {
+      user: {
+        id: fallbackProfile.id,
+        phone: formattedPhone,
+        email: fallbackProfile.email,
+        user_metadata: { full_name: fallbackProfile.full_name }
+      },
+      profile: fallbackProfile
+    };
+  },
+
   // --- EMAIL AUTH SERVICES ---
   async sendEmailOtp(email) {
     const cleanEmail = email ? email.trim().toLowerCase() : '';
@@ -641,7 +851,8 @@ export const api = {
             allergies: formData.allergies,
             medical_conditions: formData.medical_conditions,
             medications: formData.medications,
-            surgeries: formData.surgeries
+            surgeries: formData.surgeries,
+            abha_id: formData.abha_id || ''
           }
         }
       });
@@ -657,6 +868,7 @@ export const api = {
         email: cleanEmail,
         phone: cleanPhone,
         patient_id_mrn: uniqueMRN,
+        abha_id: formData.abha_id || '',
         date_of_birth: formData.date_of_birth || null,
         gender: formData.gender || 'Male',
         blood_group: formData.blood_group || 'O+',
@@ -688,6 +900,7 @@ export const api = {
           .insert([{
             id: dbPatient?.id || undefined,
             patient_mrn: uniqueMRN,
+            abha_id: formData.abha_id || '',
             full_name: formData.full_name,
             phone: cleanPhone,
             email: cleanEmail,
@@ -803,7 +1016,8 @@ export const api = {
                 emergency_contact_name: updateData.emergency_contact_name,
                 emergency_contact_phone: updateData.emergency_contact_phone,
                 allergies: updateData.allergies,
-                medical_conditions: updateData.medical_conditions
+                medical_conditions: updateData.medical_conditions,
+                abha_id: updateData.abha_id !== undefined ? updateData.abha_id : undefined
               })
               .eq('patient_mrn', data.patient_id_mrn);
           } catch (dirErr) {

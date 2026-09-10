@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useLocation, useNavigate, Link } from 'react-router-dom';
-import { ShieldCheck, ArrowLeft, RefreshCw, CheckCircle2, AlertCircle, UserPlus, MessageCircle, Mail } from 'lucide-react';
+import { ShieldCheck, ArrowLeft, RefreshCw, CheckCircle2, AlertCircle, UserPlus, MessageCircle, Smartphone, Mail } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 
@@ -16,9 +16,10 @@ export default function VerifyOtp() {
   const [errorMessage, setErrorMessage] = useState('');
   const [activeOtp, setActiveOtp] = useState('');
   const [whatsappUrl, setWhatsappUrl] = useState('');
+  const [smsUrl, setSmsUrl] = useState('');
 
   const inputRefs = useRef([]);
-  const { verifyWhatsAppOtp, verifyEmailOtp, loginWithWhatsApp, loginWithEmail } = useAuth();
+  const { verifyWhatsAppOtp, verifySmsOtp, verifyEmailOtp, loginWithWhatsApp, loginWithSms, loginWithEmail } = useAuth();
   const { showSuccess, showError } = useToast();
 
   useEffect(() => {
@@ -31,6 +32,14 @@ export default function VerifyOtp() {
           setActiveOtp(stored.otp);
           const msg = `*CareTrack Patient Portal Verification*\n\nYour 6-digit WhatsApp OTP is: *${stored.otp}*\n\n(Valid for 10 minutes)`;
           setWhatsappUrl(`https://api.whatsapp.com/send?phone=91${cleanDigits}&text=${encodeURIComponent(msg)}`);
+        }
+      } else if (type === 'sms') {
+        const cleanDigits = target.replace(/\D/g, '').slice(-10);
+        const stored = JSON.parse(localStorage.getItem(`caretrack_sms_otp_${cleanDigits}`)) || JSON.parse(localStorage.getItem('caretrack_active_sms_otp'));
+        if (stored?.otp) {
+          setActiveOtp(stored.otp);
+          const msg = `Your ClinQ / CareTrack OTP is ${stored.otp}. Valid for 10 minutes.`;
+          setSmsUrl(`sms:+91${cleanDigits}?body=${encodeURIComponent(msg)}`);
         }
       } else {
         const cleanEmail = target.trim().toLowerCase();
@@ -54,7 +63,7 @@ export default function VerifyOtp() {
 
   const maskTarget = (val, targetType) => {
     if (!val) return '******';
-    if (targetType === 'whatsapp') {
+    if (targetType === 'whatsapp' || targetType === 'sms') {
       const clean = val.replace(/\D/g, '');
       return `+91 ******${clean.slice(-4)}`;
     }
@@ -109,6 +118,8 @@ export default function VerifyOtp() {
     try {
       if (type === 'whatsapp') {
         await verifyWhatsAppOtp(target, fullOtp);
+      } else if (type === 'sms') {
+        await verifySmsOtp(target, fullOtp);
       } else {
         await verifyEmailOtp(target, fullOtp);
       }
@@ -135,6 +146,13 @@ export default function VerifyOtp() {
         if (res.whatsappUrl) {
           try { window.open(res.whatsappUrl, '_blank'); } catch(e){}
         }
+      } else if (type === 'sms') {
+        const res = await loginWithSms(target);
+        setActiveOtp(res.otp || '');
+        setSmsUrl(res.smsUrl || '');
+        if (res.smsUrl) {
+          try { window.open(res.smsUrl, '_blank'); } catch(e){}
+        }
       } else {
         const res = await loginWithEmail(target);
         setActiveOtp(res.otp || '');
@@ -154,22 +172,27 @@ export default function VerifyOtp() {
   };
 
   const isWhatsApp = type === 'whatsapp';
+  const isSms = type === 'sms';
 
   return (
     <div className="min-h-screen bg-[#FAF8FF] flex flex-col justify-center py-12 sm:px-6 lg:px-8">
       <div className="sm:mx-auto sm:w-full sm:max-w-md">
         <div className="flex justify-center items-center gap-2 mb-4">
           <div className={`w-12 h-12 rounded-2xl flex items-center justify-center font-bold text-xl shadow-md ${
-            isWhatsApp ? 'bg-[#25D366] text-white shadow-emerald-600/15' : 'bg-[#0F766E] text-white shadow-teal-900/10'
+            isWhatsApp 
+              ? 'bg-[#25D366] text-white shadow-emerald-600/15' 
+              : isSms 
+              ? 'bg-[#0284C7] text-white shadow-sky-600/15' 
+              : 'bg-[#0F766E] text-white shadow-teal-900/10'
           }`}>
-            {isWhatsApp ? <MessageCircle className="w-7 h-7 fill-white" /> : <Mail className="w-7 h-7" />}
+            {isWhatsApp ? <MessageCircle className="w-7 h-7 fill-white" /> : isSms ? <Smartphone className="w-7 h-7" /> : <Mail className="w-7 h-7" />}
           </div>
         </div>
         <h2 className="text-center text-xl font-bold text-[#0B1C30]">
-          {isWhatsApp ? 'Verify WhatsApp OTP' : 'Verify Email Address'}
+          {isWhatsApp ? 'Verify WhatsApp OTP' : isSms ? 'Verify SMS OTP' : 'Verify Email Address'}
         </h2>
         <p className="mt-1 text-center text-xs text-[#64748B]">
-          We&apos;ve sent a 6-digit verification code to {isWhatsApp ? 'your WhatsApp account' : 'your email'}:{' '}
+          We&apos;ve sent a 6-digit verification code to {isWhatsApp ? 'your WhatsApp account' : isSms ? 'your mobile phone' : 'your email'}:{' '}
           <span className="font-semibold text-[#0B1C30]">{maskTarget(target, type)}</span>
         </p>
       </div>
@@ -245,8 +268,54 @@ export default function VerifyOtp() {
               </div>
             )}
 
+            {/* SMS Interactive Delivery Card */}
+            {isSms && (
+              <div className="p-3.5 bg-sky-50/80 border border-sky-200 rounded-xl text-xs space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 font-semibold text-sky-950">
+                    <Smartphone className="w-4 h-4 text-[#0284C7]" />
+                    <span>SMS OTP Verification</span>
+                  </div>
+                  {activeOtp && (
+                    <span className="px-2 py-0.5 rounded-md bg-sky-200/70 text-sky-900 text-[11px] font-mono font-bold tracking-wider">
+                      {activeOtp}
+                    </span>
+                  )}
+                </div>
+                <p className="text-[#0369A1] text-[11px] leading-relaxed">
+                  6-digit SMS OTP dispatched to your phone. Open SMS messages or click Auto-Fill below.
+                </p>
+                <div className="flex items-center gap-2 pt-0.5">
+                  {smsUrl && (
+                    <a
+                      href={smsUrl}
+                      className="flex-1 py-2 px-3 bg-[#0284C7] hover:bg-[#0369a1] active:scale-[0.99] text-white font-bold rounded-lg text-center flex items-center justify-center gap-1.5 shadow-xs transition-all text-xs"
+                    >
+                      <Smartphone className="w-3.5 h-3.5" />
+                      <span>Open SMS App</span>
+                    </a>
+                  )}
+                  {activeOtp && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const digits = activeOtp.split('');
+                        setOtp(digits);
+                        showSuccess('OTP filled!');
+                        inputRefs.current[5]?.focus();
+                      }}
+                      className="flex-1 py-2 px-3 bg-white border border-sky-300 hover:bg-sky-100/60 text-sky-900 font-bold rounded-lg text-center flex items-center justify-center gap-1.5 shadow-xs transition-all text-xs cursor-pointer"
+                    >
+                      <CheckCircle2 className="w-3.5 h-3.5 text-sky-600" />
+                      <span>Auto-Fill OTP</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+
             {/* Email Delivery Card */}
-            {!isWhatsApp && activeOtp && (
+            {!isWhatsApp && !isSms && activeOtp && (
               <div className="p-3 bg-teal-50 border border-teal-200 rounded-xl text-xs flex items-center justify-between">
                 <div>
                   <span className="text-teal-900 font-medium">OTP Code: </span>

@@ -14,7 +14,9 @@ import {
   ShieldCheck, 
   Sparkles,
   ChevronRight,
-  Upload
+  Upload,
+  ExternalLink,
+  CreditCard
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
@@ -121,6 +123,29 @@ export default function Layout() {
           })}
         </nav>
 
+        {/* Ayushman Bharat ABHA Registration Card in Sidebar */}
+        <div className="p-3 mx-4 mb-2 rounded-2xl bg-gradient-to-r from-orange-50/90 via-white to-emerald-50/80 border border-orange-200 shadow-xs">
+          <div className="flex items-center justify-between mb-1.5">
+            <div className="flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-[#FF9933]" />
+              <span className="text-xs font-bold text-[#0B1C30]">Ayushman Bharat</span>
+            </div>
+            <span className="badge bg-orange-100 text-orange-800 border-orange-200 text-[9px] font-bold">ABDM</span>
+          </div>
+          <p className="text-[11px] text-[#64748B] mb-2.5 leading-snug">
+            Create your 14-digit ABHA Digital Health Card on the Govt portal.
+          </p>
+          <a
+            href="https://abha.abdm.gov.in/abha/v3/register"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="w-full btn btn-secondary !min-h-[34px] !text-xs !py-1 flex items-center justify-center gap-1.5 text-orange-700 hover:text-orange-800 bg-white hover:bg-orange-50 border-orange-300 font-semibold transition-colors"
+          >
+            <ExternalLink className="w-3 h-3 text-orange-600" />
+            <span>ABHA Registration</span>
+          </a>
+        </div>
+
         {/* Quick Upload CTA */}
         <div className="p-4 mx-4 mb-3 rounded-2xl bg-teal-50/60 border border-teal-100/80">
           <div className="flex items-center gap-2 mb-1.5">
@@ -172,7 +197,7 @@ export default function Layout() {
             </div>
           </div>
 
-          {/* Desktop Status Indicator */}
+          {/* Desktop Status Indicator & ABHA Registration Button */}
           <div className="hidden lg:flex items-center gap-3">
             {isSupabaseConfigured ? (
               <div className="flex items-center gap-2 px-3 py-1.5 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-full text-xs font-medium">
@@ -185,10 +210,36 @@ export default function Layout() {
                 <span>Local Secure Mode</span>
               </div>
             )}
+
+            {/* ABHA Govt Registration Button in Header */}
+            <a
+              href="https://abha.abdm.gov.in/abha/v3/register"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-gradient-to-r from-orange-500/10 via-amber-500/10 to-emerald-500/10 hover:from-orange-500/20 hover:to-emerald-500/20 text-[#0B1C30] border border-orange-200 text-xs font-semibold shadow-xs transition-all hover:scale-[1.02] cursor-pointer"
+              title="Official ABDM Registration Portal"
+            >
+              <div className="w-4 h-4 rounded-md bg-gradient-to-br from-orange-500 via-amber-500 to-emerald-600 p-0.5 shadow-xs flex items-center justify-center">
+                <span className="text-[7px] font-black text-white leading-none">AB</span>
+              </div>
+              <span className="text-orange-900 font-bold">ABHA Registration</span>
+              <ExternalLink className="w-3.5 h-3.5 text-orange-600" />
+            </a>
           </div>
 
           {/* Top Actions: Notification & Profile */}
           <div className="flex items-center gap-3">
+            {/* Mobile ABHA Registration quick pill */}
+            <a
+              href="https://abha.abdm.gov.in/abha/v3/register"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex lg:hidden items-center gap-1.5 px-2.5 py-1 rounded-full bg-orange-50 border border-orange-200 text-orange-800 text-[11px] font-semibold"
+            >
+              <span>ABHA</span>
+              <ExternalLink className="w-3 h-3 text-orange-600" />
+            </a>
+
             {/* Notification Dropdown */}
             <div className="relative">
               <button
@@ -292,6 +343,28 @@ export default function Layout() {
                   </NavLink>
                 );
               })}
+
+              {/* Mobile ABHA Registration Link */}
+              <div className="pt-4 mt-4 border-t border-slate-100">
+                <div className="p-3.5 rounded-xl bg-gradient-to-r from-orange-50 via-white to-emerald-50 border border-orange-200">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="font-bold text-xs text-[#0B1C30]">Ayushman Bharat (ABHA)</span>
+                    <span className="badge bg-orange-100 text-orange-800 text-[9px] font-bold">ABDM</span>
+                  </div>
+                  <p className="text-[11px] text-[#64748B] mb-2.5 leading-tight">
+                    Official Govt Portal for digital health card registration.
+                  </p>
+                  <a
+                    href="https://abha.abdm.gov.in/abha/v3/register"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-full btn btn-secondary !min-h-[36px] !text-xs flex items-center justify-center gap-1.5 text-orange-700 bg-white border-orange-300 font-semibold"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" />
+                    <span>Open ABHA Portal</span>
+                  </a>
+                </div>
+              </div>
             </nav>
 
             <div className="pt-4 border-t border-[#E2E8F0]">
