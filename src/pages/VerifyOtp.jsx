@@ -14,10 +14,33 @@ export default function VerifyOtp() {
   const [canResend, setCanResend] = useState(false);
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  const [activeOtp, setActiveOtp] = useState('');
+  const [whatsappUrl, setWhatsappUrl] = useState('');
 
   const inputRefs = useRef([]);
   const { verifyWhatsAppOtp, verifyEmailOtp, loginWithWhatsApp, loginWithEmail } = useAuth();
   const { showSuccess, showError } = useToast();
+
+  useEffect(() => {
+    // Check if active OTP exists in storage
+    try {
+      if (type === 'whatsapp') {
+        const cleanDigits = target.replace(/\D/g, '').slice(-10);
+        const stored = JSON.parse(localStorage.getItem(`caretrack_wa_otp_${cleanDigits}`)) || JSON.parse(localStorage.getItem('caretrack_active_wa_otp'));
+        if (stored?.otp) {
+          setActiveOtp(stored.otp);
+          const msg = `*CareTrack Patient Portal Verification*\n\nYour 6-digit WhatsApp OTP is: *${stored.otp}*\n\n(Valid for 10 minutes)`;
+          setWhatsappUrl(`https://api.whatsapp.com/send?phone=91${cleanDigits}&text=${encodeURIComponent(msg)}`);
+        }
+      } else {
+        const cleanEmail = target.trim().toLowerCase();
+        const stored = JSON.parse(localStorage.getItem(`caretrack_email_otp_${cleanEmail}`));
+        if (stored?.otp) {
+          setActiveOtp(stored.otp);
+        }
+      }
+    } catch (e) {}
+  }, [type, target]);
 
   useEffect(() => {
     let interval = null;
@@ -106,9 +129,15 @@ export default function VerifyOtp() {
     setLoading(true);
     try {
       if (type === 'whatsapp') {
-        await loginWithWhatsApp(target);
+        const res = await loginWithWhatsApp(target);
+        setActiveOtp(res.otp || '');
+        setWhatsappUrl(res.whatsappUrl || '');
+        if (res.whatsappUrl) {
+          try { window.open(res.whatsappUrl, '_blank'); } catch(e){}
+        }
       } else {
-        await loginWithEmail(target);
+        const res = await loginWithEmail(target);
+        setActiveOtp(res.otp || '');
       }
       showSuccess(`New OTP sent to ${maskTarget(target, type)}`);
       setTimer(45);
@@ -168,6 +197,76 @@ export default function VerifyOtp() {
           )}
 
           <form onSubmit={handleVerify} className="space-y-6">
+            {/* WhatsApp Interactive Delivery Card */}
+            {isWhatsApp && (
+              <div className="p-3.5 bg-emerald-50/80 border border-emerald-200 rounded-xl text-xs space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 font-semibold text-emerald-950">
+                    <MessageCircle className="w-4 h-4 text-[#25D366] fill-[#25D366]" />
+                    <span>WhatsApp Verification</span>
+                  </div>
+                  {activeOtp && (
+                    <span className="px-2 py-0.5 rounded-md bg-emerald-200/70 text-emerald-900 text-[11px] font-mono font-bold tracking-wider">
+                      {activeOtp}
+                    </span>
+                  )}
+                </div>
+                <p className="text-[#047857] text-[11px] leading-relaxed">
+                  OTP generated for WhatsApp. You can open your WhatsApp chat or click Auto-Fill below.
+                </p>
+                <div className="flex items-center gap-2 pt-0.5">
+                  {whatsappUrl && (
+                    <a
+                      href={whatsappUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex-1 py-2 px-3 bg-[#25D366] hover:bg-[#20ba59] active:scale-[0.99] text-white font-bold rounded-lg text-center flex items-center justify-center gap-1.5 shadow-xs transition-all text-xs"
+                    >
+                      <MessageCircle className="w-3.5 h-3.5 fill-white" />
+                      <span>Open WhatsApp</span>
+                    </a>
+                  )}
+                  {activeOtp && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const digits = activeOtp.split('');
+                        setOtp(digits);
+                        showSuccess('OTP filled!');
+                        inputRefs.current[5]?.focus();
+                      }}
+                      className="flex-1 py-2 px-3 bg-white border border-emerald-300 hover:bg-emerald-100/60 text-emerald-900 font-bold rounded-lg text-center flex items-center justify-center gap-1.5 shadow-xs transition-all text-xs cursor-pointer"
+                    >
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                      <span>Auto-Fill OTP</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Email Delivery Card */}
+            {!isWhatsApp && activeOtp && (
+              <div className="p-3 bg-teal-50 border border-teal-200 rounded-xl text-xs flex items-center justify-between">
+                <div>
+                  <span className="text-teal-900 font-medium">OTP Code: </span>
+                  <strong className="font-mono text-sm tracking-wider text-teal-950">{activeOtp}</strong>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const digits = activeOtp.split('');
+                    setOtp(digits);
+                    showSuccess('OTP filled!');
+                    inputRefs.current[5]?.focus();
+                  }}
+                  className="py-1 px-3 bg-[#0F766E] hover:bg-[#0d655e] text-white font-semibold rounded-lg text-xs shadow-xs cursor-pointer"
+                >
+                  Auto-Fill
+                </button>
+              </div>
+            )}
+
             {/* 6 Digit OTP Inputs */}
             <div>
               <label className="block text-xs font-semibold text-[#0B1C30] uppercase tracking-wider text-center mb-3">

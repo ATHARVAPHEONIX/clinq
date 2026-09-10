@@ -164,7 +164,7 @@ export default function Settings() {
             <div className="flex items-center justify-between pt-2">
               <div>
                 <div className="font-semibold text-[#0B1C30]">Appointment Reminders</div>
-                <div className="text-[#64748B]">Get SMS and email notifications 24 hours prior to visits.</div>
+                <div className="text-[#64748B]">Get WhatsApp and email notifications 24 hours prior to visits.</div>
               </div>
               <input
                 type="checkbox"

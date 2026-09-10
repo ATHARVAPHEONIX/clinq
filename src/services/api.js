@@ -252,12 +252,15 @@ export const api = {
       }
     }
 
-    await new Promise(r => setTimeout(r, 300));
+    const messageText = `*CareTrack Patient Portal Verification*\n\nYour 6-digit WhatsApp OTP is: *${otp}*\n\n(Valid for 10 minutes. Do not share this OTP with anyone.)`;
+    const whatsappUrl = `https://api.whatsapp.com/send?phone=91${cleanDigits}&text=${encodeURIComponent(messageText)}`;
 
     return {
       success: true,
+      otp,
+      whatsappUrl,
       formattedPhone,
-      message: 'OTP sent to your WhatsApp number.'
+      message: `OTP sent to WhatsApp (+91 ${cleanDigits.slice(0, 5)} ${cleanDigits.slice(5)})`
     };
   },
 
@@ -438,14 +441,15 @@ export const api = {
 
         return { message: 'OTP sent to your email address.', data };
       } catch (err) {
-        if (!err.message?.toLowerCase().includes('rate limit')) {
-          console.warn('Supabase email OTP error:', err);
-        }
       }
     }
 
-    await new Promise(r => setTimeout(r, 300));
-    return { message: 'OTP sent to your email address.' };
+    return {
+      success: true,
+      otp,
+      cleanEmail,
+      message: `OTP sent to ${cleanEmail}`
+    };
   },
 
   async verifyEmailOtp(email, enteredOtp) {
