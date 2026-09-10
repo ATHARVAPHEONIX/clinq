@@ -289,7 +289,7 @@ export default function AddVisit() {
                   name="doctor_name"
                   value={visitForm.doctor_name}
                   onChange={handleInputChange}
-                  placeholder="e.g. Dr. Rahul Sharma"
+                  placeholder="e.g. Dr. John Doe"
                   className="input-field"
                   required
                 />

@@ -28,9 +28,8 @@ export default function Layout() {
   const [notificationsOpen, setNotificationsOpen] = useState(false);
 
   const notifications = [
-    { id: 1, title: 'Report Verified', text: 'Blood test report from Apollo Clinic has been verified.', time: '2h ago', unread: true },
-    { id: 2, title: 'Upcoming Visit Reminder', text: 'Cardiology follow-up scheduled for 20 Sep 2026.', time: '1d ago', unread: false },
-    { id: 3, title: 'Profile Updated', text: 'Emergency contact information was updated.', time: '3d ago', unread: false }
+    { id: 1, title: 'Report Verified', text: 'Diagnostic reports have been processed securely.', time: '2h ago', unread: true },
+    { id: 2, title: 'Profile Synchronized', text: 'Healthcare profile is synchronized with database.', time: '1d ago', unread: false }
   ];
 
   const handleLogout = async () => {
@@ -48,15 +47,15 @@ export default function Layout() {
     { path: '/settings', label: 'Settings', icon: SettingsIcon },
   ];
 
-  const patientName = patient?.full_name || 'Rahul Sharma';
-  const patientMRN = patient?.patient_id_mrn || 'CTR-2026-001245';
-  const patientEmail = patient?.email || user?.email || 'patient@example.com';
+  const patientName = patient?.full_name || 'Patient';
+  const patientMRN = patient?.patient_id_mrn || 'CareTrack Patient';
   const initials = patientName
     .split(' ')
+    .filter(Boolean)
     .map(n => n[0])
     .join('')
     .substring(0, 2)
-    .toUpperCase();
+    .toUpperCase() || 'PT';
 
   return (
     <div className="flex h-screen bg-[#FAF8FF] overflow-hidden text-[#0B1C30]">
@@ -147,7 +146,7 @@ export default function Layout() {
           </div>
           <button
             onClick={handleLogout}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-rose-600 hover:bg-rose-50 transition-colors"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
           >
             <LogOut className="w-4 h-4" />
             <span>Logout</span>
@@ -173,7 +172,7 @@ export default function Layout() {
             </div>
           </div>
 
-          {/* Desktop Search / Status Indicator */}
+          {/* Desktop Status Indicator */}
           <div className="hidden lg:flex items-center gap-3">
             {isSupabaseConfigured ? (
               <div className="flex items-center gap-2 px-3 py-1.5 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-full text-xs font-medium">
@@ -183,7 +182,7 @@ export default function Layout() {
             ) : (
               <div className="flex items-center gap-2 px-3 py-1.5 bg-teal-50 border border-teal-200 text-teal-800 rounded-full text-xs font-medium">
                 <Sparkles className="w-3.5 h-3.5 text-[#0F766E]" />
-                <span>Demo Sandbox Mode (Fully Interactive)</span>
+                <span>Local Secure Mode</span>
               </div>
             )}
           </div>
@@ -197,7 +196,7 @@ export default function Layout() {
                 className="p-2.5 rounded-xl border border-[#E2E8F0] text-[#64748B] hover:bg-slate-50 hover:text-[#0B1C30] transition-colors relative"
               >
                 <Bell className="w-5 h-5" />
-                <span className="absolute top-2 right-2 w-2 h-2 bg-rose-500 rounded-full" />
+                <span className="absolute top-2 right-2 w-2 h-2 bg-emerald-500 rounded-full" />
               </button>
 
               {notificationsOpen && (

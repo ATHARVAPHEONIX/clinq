@@ -269,16 +269,6 @@ export default function Login() {
 
       <div className="mt-6 sm:mx-auto sm:w-full sm:max-w-md px-4 sm:px-0">
         <div className="card shadow-lg border border-[#E2E8F0] p-6 sm:p-8">
-          
-          {/* Demo Sandbox Indicator */}
-          {!isSupabaseConfigured && (
-            <div className="mb-6 p-3 bg-teal-50 border border-teal-200 rounded-xl text-xs text-teal-900 flex items-start gap-2">
-              <Sparkles className="w-4 h-4 text-[#0F766E] shrink-0 mt-0.5" />
-              <div>
-                <span className="font-semibold">Demo Sandbox:</span> Mobile: <code className="font-mono font-bold text-[#0F766E]">9876543210</code> | OTP: <code className="font-mono font-bold text-[#0F766E]">123456</code>.
-              </div>
-            </div>
-          )}
 
           {/* Inline Error Banner */}
           {errorMessage && (
@@ -542,7 +532,7 @@ export default function Login() {
                       setOtpDigits(['1', '2', '3', '4', '5', '6']);
                       setErrorMessage('');
                     }}
-                    className="font-bold text-[#0F766E] hover:underline"
+                    className="font-bold text-[#0F766E] hover:underline cursor-pointer"
                   >
                     Auto-Fill 123456
                   </button>

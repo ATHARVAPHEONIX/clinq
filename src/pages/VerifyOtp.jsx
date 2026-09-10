@@ -7,7 +7,7 @@ import { useToast } from '../context/ToastContext';
 export default function VerifyOtp() {
   const location = useLocation();
   const navigate = useNavigate();
-  const { type = 'whatsapp', target = '+91 98765 43210' } = location.state || {};
+  const { type = 'whatsapp', target = '' } = location.state || {};
 
   const [otp, setOtp] = useState(['', '', '', '', '', '']);
   const [timer, setTimer] = useState(45);
@@ -206,14 +206,14 @@ export default function VerifyOtp() {
             </div>
           ) : (
             <div className="mb-6 p-3 bg-teal-50 border border-teal-200 rounded-xl text-xs text-teal-900 flex items-center justify-between">
-              <span>Demo Sandbox OTP: <strong className="font-bold text-[#0F766E]">123456</strong></span>
+              <span>Verification OTP: <strong className="font-bold text-[#0F766E]">123456</strong></span>
               <button
                 type="button"
                 onClick={() => {
                   setOtp(['1', '2', '3', '4', '5', '6']);
                   setErrorMessage('');
                 }}
-                className="font-bold text-[#0F766E] hover:underline"
+                className="font-bold text-[#0F766E] hover:underline cursor-pointer"
               >
                 Auto-Fill Code
               </button>
@@ -275,7 +275,7 @@ export default function VerifyOtp() {
                   type="button"
                   onClick={handleResend}
                   disabled={loading}
-                  className="text-[#0F766E] font-semibold hover:underline flex items-center gap-1"
+                  className="text-[#0F766E] font-semibold hover:underline flex items-center gap-1 cursor-pointer"
                 >
                   <RefreshCw className="w-3.5 h-3.5" />
                   <span>Resend OTP</span>
@@ -291,7 +291,7 @@ export default function VerifyOtp() {
             <button
               type="submit"
               disabled={loading || otp.join('').length !== 6}
-              className="w-full btn btn-primary font-semibold shadow-xs flex items-center justify-center gap-2"
+              className="w-full btn btn-primary font-semibold shadow-xs flex items-center justify-center gap-2 cursor-pointer"
             >
               {loading ? (
                 <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />

@@ -190,7 +190,7 @@ export default function Register() {
                   name="full_name"
                   value={formData.full_name}
                   onChange={handleChange}
-                  placeholder="e.g. Rahul Sharma"
+                  placeholder="Enter your full legal name"
                   className="input-field"
                   required
                 />
@@ -216,7 +216,7 @@ export default function Register() {
                     name="phone"
                     value={formData.phone}
                     onChange={handleChange}
-                    placeholder="+91 98765 43210"
+                    placeholder="e.g. 9876543210"
                     className="input-field"
                     required
                   />
@@ -365,7 +365,7 @@ export default function Register() {
                   name="emergency_contact_name"
                   value={formData.emergency_contact_name}
                   onChange={handleChange}
-                  placeholder="e.g. Pooja Sharma"
+                  placeholder="e.g. Contact Person Full Name"
                   className="input-field"
                   required
                 />
@@ -390,7 +390,7 @@ export default function Register() {
                     name="emergency_contact_phone"
                     value={formData.emergency_contact_phone}
                     onChange={handleChange}
-                    placeholder="+91 98765 43211"
+                    placeholder="e.g. 9876543211"
                     className="input-field"
                     required
                   />
@@ -441,7 +441,7 @@ export default function Register() {
                   name="medications"
                   value={formData.medications}
                   onChange={handleChange}
-                  placeholder="e.g. Telmisartan 40mg daily"
+                  placeholder="e.g. Daily vitamins or prescribed medicines"
                   className="input-field"
                 />
               </div>
@@ -453,7 +453,7 @@ export default function Register() {
                   name="surgeries"
                   value={formData.surgeries}
                   onChange={handleChange}
-                  placeholder="e.g. Appendectomy (2018)"
+                  placeholder="e.g. Appendectomy (2020)"
                   className="input-field"
                 />
               </div>
@@ -496,7 +496,7 @@ export default function Register() {
               <button
                 type="button"
                 onClick={prevStep}
-                className="btn btn-secondary text-xs flex items-center gap-1.5"
+                className="btn btn-secondary text-xs flex items-center gap-1.5 cursor-pointer"
               >
                 <ArrowLeft className="w-4 h-4" />
                 <span>Back</span>
@@ -511,7 +511,7 @@ export default function Register() {
               <button
                 type="button"
                 onClick={nextStep}
-                className="btn btn-primary text-xs flex items-center gap-1.5 ml-auto"
+                className="btn btn-primary text-xs flex items-center gap-1.5 ml-auto cursor-pointer"
               >
                 <span>Continue</span>
                 <ArrowRight className="w-4 h-4" />
@@ -521,7 +521,7 @@ export default function Register() {
                 type="button"
                 onClick={handleSubmit}
                 disabled={loading}
-                className="btn btn-primary text-xs flex items-center gap-1.5 ml-auto shadow-md"
+                className="btn btn-primary text-xs flex items-center gap-1.5 ml-auto shadow-md cursor-pointer"
               >
                 {loading ? (
                   <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />

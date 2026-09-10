@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   User, 
   Mail, 
@@ -25,23 +25,46 @@ export default function Profile() {
   const [loading, setLoading] = useState(false);
 
   const [editForm, setEditForm] = useState({
-    full_name: patient?.full_name || 'Rahul Sharma',
-    phone: patient?.phone || '+91 98765 43210',
-    date_of_birth: patient?.date_of_birth || '1990-05-15',
+    full_name: patient?.full_name || '',
+    phone: patient?.phone || '',
+    date_of_birth: patient?.date_of_birth || '',
     gender: patient?.gender || 'Male',
     blood_group: patient?.blood_group || 'O+',
-    address: patient?.address || '42, Green Park Avenue, Flat 3B',
-    city: patient?.city || 'Mumbai',
-    state: patient?.state || 'Maharashtra',
-    pincode: patient?.pincode || '400001',
-    emergency_contact_name: patient?.emergency_contact_name || 'Pooja Sharma',
-    emergency_contact_relation: patient?.emergency_contact_relation || 'Spouse',
-    emergency_contact_phone: patient?.emergency_contact_phone || '+91 98765 43211',
-    allergies: patient?.allergies || 'Penicillin, Dust Mites',
-    medical_conditions: patient?.medical_conditions || 'Hypertension (Stage 1)',
-    medications: patient?.medications || 'Telmisartan 40mg (OD), Multivitamins',
-    surgeries: patient?.surgeries || 'Appendectomy (2018)'
+    address: patient?.address || '',
+    city: patient?.city || '',
+    state: patient?.state || '',
+    pincode: patient?.pincode || '',
+    emergency_contact_name: patient?.emergency_contact_name || '',
+    emergency_contact_relation: patient?.emergency_contact_relation || '',
+    emergency_contact_phone: patient?.emergency_contact_phone || '',
+    allergies: patient?.allergies || '',
+    medical_conditions: patient?.medical_conditions || '',
+    medications: patient?.medications || '',
+    surgeries: patient?.surgeries || ''
   });
+
+  useEffect(() => {
+    if (patient) {
+      setEditForm({
+        full_name: patient.full_name || '',
+        phone: patient.phone || '',
+        date_of_birth: patient.date_of_birth || '',
+        gender: patient.gender || 'Male',
+        blood_group: patient.blood_group || 'O+',
+        address: patient.address || '',
+        city: patient.city || '',
+        state: patient.state || '',
+        pincode: patient.pincode || '',
+        emergency_contact_name: patient.emergency_contact_name || '',
+        emergency_contact_relation: patient.emergency_contact_relation || '',
+        emergency_contact_phone: patient.emergency_contact_phone || '',
+        allergies: patient.allergies || '',
+        medical_conditions: patient.medical_conditions || '',
+        medications: patient.medications || '',
+        surgeries: patient.surgeries || ''
+      });
+    }
+  }, [patient]);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -63,8 +86,14 @@ export default function Profile() {
     }
   };
 
-  const patientName = patient?.full_name || editForm.full_name;
-  const initials = patientName.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
+  const patientName = patient?.full_name || editForm.full_name || 'Patient';
+  const initials = patientName
+    .split(' ')
+    .filter(Boolean)
+    .map(n => n[0])
+    .join('')
+    .substring(0, 2)
+    .toUpperCase() || 'PT';
 
   return (
     <div className="space-y-6 max-w-4xl mx-auto animate-in fade-in duration-300">
@@ -81,23 +110,27 @@ export default function Profile() {
             </div>
             <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-[#64748B]">
               <span className="font-mono font-bold text-[#0F766E] bg-teal-50 px-2 py-0.5 rounded-md border border-teal-200">
-                MRN: {patient?.patient_id_mrn || 'CTR-2026-001245'}
+                MRN: {patient?.patient_id_mrn || 'N/A'}
               </span>
-              <span className="flex items-center gap-1">
-                <Mail className="w-3.5 h-3.5 text-slate-400" />
-                {patient?.email || 'rahul.sharma@example.com'}
-              </span>
-              <span className="flex items-center gap-1">
-                <Phone className="w-3.5 h-3.5 text-slate-400" />
-                {patient?.phone || '+91 98765 43210'}
-              </span>
+              {patient?.email && (
+                <span className="flex items-center gap-1">
+                  <Mail className="w-3.5 h-3.5 text-slate-400" />
+                  {patient.email}
+                </span>
+              )}
+              {patient?.phone && (
+                <span className="flex items-center gap-1">
+                  <Phone className="w-3.5 h-3.5 text-slate-400" />
+                  {patient.phone}
+                </span>
+              )}
             </div>
           </div>
         </div>
 
         <button
           onClick={() => setIsEditing(true)}
-          className="btn btn-primary text-xs flex items-center gap-1.5 shrink-0 shadow-xs"
+          className="btn btn-primary text-xs flex items-center gap-1.5 shrink-0 shadow-xs cursor-pointer"
         >
           <Edit3 className="w-4 h-4" />
           <span>Edit Profile</span>
@@ -118,19 +151,19 @@ export default function Profile() {
           <div className="grid grid-cols-2 gap-4 text-xs">
             <div>
               <span className="text-slate-400 block mb-0.5">Date of Birth</span>
-              <span className="font-semibold text-slate-800">{patient?.date_of_birth || '15 May 1990'}</span>
+              <span className="font-semibold text-slate-800">{patient?.date_of_birth || 'Not specified'}</span>
             </div>
             <div>
               <span className="text-slate-400 block mb-0.5">Gender</span>
-              <span className="font-semibold text-slate-800">{patient?.gender || 'Male'}</span>
+              <span className="font-semibold text-slate-800">{patient?.gender || 'Not specified'}</span>
             </div>
             <div>
               <span className="text-slate-400 block mb-0.5">Blood Group</span>
               <span className="badge badge-teal font-bold">{patient?.blood_group || 'O+'}</span>
             </div>
             <div>
-              <span className="text-slate-400 block mb-0.5">Language</span>
-              <span className="font-semibold text-slate-800">English, Hindi</span>
+              <span className="text-slate-400 block mb-0.5">Primary Language</span>
+              <span className="font-semibold text-slate-800">English</span>
             </div>
           </div>
         </div>
@@ -147,20 +180,20 @@ export default function Profile() {
           <div className="space-y-3 text-xs">
             <div>
               <span className="text-slate-400 block mb-0.5">Residential Address</span>
-              <span className="font-semibold text-slate-800">{patient?.address || '42, Green Park Avenue, Flat 3B'}</span>
+              <span className="font-semibold text-slate-800">{patient?.address || 'Not specified'}</span>
             </div>
             <div className="grid grid-cols-3 gap-2">
               <div>
                 <span className="text-slate-400 block mb-0.5">City</span>
-                <span className="font-semibold text-slate-800">{patient?.city || 'Mumbai'}</span>
+                <span className="font-semibold text-slate-800">{patient?.city || '—'}</span>
               </div>
               <div>
                 <span className="text-slate-400 block mb-0.5">State</span>
-                <span className="font-semibold text-slate-800">{patient?.state || 'Maharashtra'}</span>
+                <span className="font-semibold text-slate-800">{patient?.state || '—'}</span>
               </div>
               <div>
                 <span className="text-slate-400 block mb-0.5">Pincode</span>
-                <span className="font-semibold text-slate-800">{patient?.pincode || '400001'}</span>
+                <span className="font-semibold text-slate-800">{patient?.pincode || '—'}</span>
               </div>
             </div>
           </div>
@@ -179,13 +212,17 @@ export default function Profile() {
             <div className="flex justify-between items-center">
               <div>
                 <span className="text-slate-400 block mb-0.5">Primary Contact</span>
-                <span className="font-bold text-slate-800">{patient?.emergency_contact_name || 'Pooja Sharma'}</span>
+                <span className="font-bold text-slate-800">{patient?.emergency_contact_name || 'Not provided'}</span>
               </div>
-              <span className="badge badge-gray">{patient?.emergency_contact_relation || 'Spouse'}</span>
+              {patient?.emergency_contact_relation && (
+                <span className="badge badge-gray">{patient.emergency_contact_relation}</span>
+              )}
             </div>
             <div>
               <span className="text-slate-400 block mb-0.5">Phone Number</span>
-              <span className="font-mono font-semibold text-[#0F766E]">{patient?.emergency_contact_phone || '+91 98765 43211'}</span>
+              <span className="font-mono font-semibold text-[#0F766E]">
+                {patient?.emergency_contact_phone || '—'}
+              </span>
             </div>
           </div>
         </div>
@@ -203,16 +240,16 @@ export default function Profile() {
             <div>
               <span className="text-slate-400 block mb-0.5">Known Allergies</span>
               <span className="font-semibold text-rose-700 bg-rose-50 px-2 py-0.5 rounded-md border border-rose-200">
-                {patient?.allergies || 'Penicillin, Dust Mites'}
+                {patient?.allergies || 'No known allergies'}
               </span>
             </div>
             <div>
               <span className="text-slate-400 block mb-0.5">Existing Conditions</span>
-              <span className="font-semibold text-slate-800">{patient?.medical_conditions || 'Hypertension (Stage 1)'}</span>
+              <span className="font-semibold text-slate-800">{patient?.medical_conditions || 'None reported'}</span>
             </div>
             <div>
               <span className="text-slate-400 block mb-0.5">Ongoing Medications</span>
-              <span className="font-semibold text-slate-800">{patient?.medications || 'Telmisartan 40mg (OD)'}</span>
+              <span className="font-semibold text-slate-800">{patient?.medications || 'None reported'}</span>
             </div>
           </div>
         </div>
@@ -227,7 +264,7 @@ export default function Profile() {
                 <Edit3 className="w-4 h-4 text-[#0F766E]" />
                 <span>Edit Patient Profile</span>
               </h3>
-              <button onClick={() => setIsEditing(false)} className="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg">
+              <button onClick={() => setIsEditing(false)} className="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg cursor-pointer">
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -325,10 +362,10 @@ export default function Profile() {
               </div>
 
               <div className="pt-4 border-t border-slate-100 flex items-center justify-end gap-2">
-                <button type="button" onClick={() => setIsEditing(false)} className="btn btn-secondary !min-h-[38px] text-xs">
+                <button type="button" onClick={() => setIsEditing(false)} className="btn btn-secondary !min-h-[38px] text-xs cursor-pointer">
                   Cancel
                 </button>
-                <button type="submit" disabled={loading} className="btn btn-primary !min-h-[38px] text-xs flex items-center gap-1.5 shadow-xs">
+                <button type="submit" disabled={loading} className="btn btn-primary !min-h-[38px] text-xs flex items-center gap-1.5 shadow-xs cursor-pointer">
                   {loading ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <Save className="w-4 h-4" />}
                   <span>Save Changes</span>
                 </button>

@@ -14,7 +14,8 @@ import {
   Sparkles, 
   ShieldCheck, 
   Download,
-  Activity
+  Activity,
+  FolderOpen
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
@@ -48,9 +49,8 @@ export default function Dashboard() {
     loadData();
   }, [patient?.id]);
 
-  const patientName = patient?.full_name || 'Rahul Sharma';
-  const lastVisit = visits[0];
-  const upcomingVisitDate = '20 Sep 2026';
+  const patientName = patient?.full_name || 'Patient';
+  const lastVisit = visits && visits.length > 0 ? visits[0] : null;
 
   const quickActions = [
     { 
@@ -90,10 +90,10 @@ export default function Dashboard() {
         <div className="relative z-10 max-w-2xl">
           <div className="flex items-center gap-2 mb-2">
             <span className="badge badge-teal text-xs font-semibold">CareTrack Portal</span>
-            <span className="text-xs text-[#64748B]">MRN: {patient?.patient_id_mrn || 'CTR-2026-001245'}</span>
+            <span className="text-xs text-[#64748B]">MRN: {patient?.patient_id_mrn || 'N/A'}</span>
           </div>
           <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-[#0B1C30]">
-            Good Morning, {patientName.split(' ')[0]} 👋
+            Welcome, {patientName.split(' ')[0]} 👋
           </h1>
           <p className="mt-1.5 text-sm text-[#64748B] leading-relaxed">
             Manage your personal healthcare records, doctor consultations, prescriptions, and lab reports securely in one unified timeline.
@@ -141,7 +141,7 @@ export default function Dashboard() {
               Doctor Visits
             </div>
             <div className="mt-3 flex items-baseline gap-2">
-              <span className="text-3xl font-bold text-[#0B1C30]">{visits.length || 3}</span>
+              <span className="text-3xl font-bold text-[#0B1C30]">{visits.length}</span>
               <span className="text-xs text-[#0F766E] font-medium">recorded</span>
             </div>
             <div className="mt-3 text-[11px] text-[#64748B] flex items-center gap-1">
@@ -155,7 +155,7 @@ export default function Dashboard() {
               Medical Reports
             </div>
             <div className="mt-3 flex items-baseline gap-2">
-              <span className="text-3xl font-bold text-[#0B1C30]">{reports.length || 4}</span>
+              <span className="text-3xl font-bold text-[#0B1C30]">{reports.length}</span>
               <span className="text-xs text-secondary font-medium">files</span>
             </div>
             <div className="mt-3 text-[11px] text-[#64748B] flex items-center gap-1">
@@ -169,26 +169,28 @@ export default function Dashboard() {
               Last Doctor Visit
             </div>
             <div className="mt-3">
-              <span className="text-xl font-bold text-[#0B1C30]">
-                {lastVisit ? lastVisit.visit_date : '12 Aug 2026'}
+              <span className="text-lg sm:text-xl font-bold text-[#0B1C30] truncate block">
+                {lastVisit ? lastVisit.visit_date : 'No visits yet'}
               </span>
             </div>
             <div className="mt-3 text-[11px] text-[#64748B] truncate flex items-center gap-1">
               <Stethoscope className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-              <span className="truncate">{lastVisit?.doctor_name || 'Dr. Rahul Sharma'}</span>
+              <span className="truncate">{lastVisit ? lastVisit.doctor_name : 'None recorded'}</span>
             </div>
           </div>
 
           <div className="card p-5 flex flex-col justify-between border-l-4 border-l-amber-500">
             <div className="text-xs font-semibold text-[#64748B] uppercase tracking-wider">
-              Upcoming Follow-up
+              Follow-up Status
             </div>
             <div className="mt-3">
-              <span className="text-xl font-bold text-[#0B1C30]">{upcomingVisitDate}</span>
+              <span className="text-lg sm:text-xl font-bold text-[#0B1C30]">
+                {lastVisit ? 'Active' : 'Routine'}
+              </span>
             </div>
             <div className="mt-3 text-[11px] text-amber-700 flex items-center gap-1 font-medium">
               <Clock className="w-3.5 h-3.5 shrink-0" />
-              <span>Cardiology Review</span>
+              <span>{lastVisit ? `${lastVisit.specialization || 'Consultation'}` : 'Schedule when needed'}</span>
             </div>
           </div>
         </div>
@@ -229,85 +231,112 @@ export default function Dashboard() {
             <h2 className="text-base font-bold text-[#0B1C30]">Recent Medical History</h2>
             <p className="text-xs text-[#64748B]">Showing latest recorded clinical consultations</p>
           </div>
-          <Link
-            to="/history"
-            className="text-xs font-semibold text-[#0F766E] hover:underline flex items-center gap-1"
-          >
-            <span>View All History</span>
-            <ArrowRight className="w-3.5 h-3.5" />
-          </Link>
-        </div>
-
-        <div className="space-y-4">
-          {visits.slice(0, 3).map((visit) => (
-            <div
-              key={visit.id}
-              className="card hover:border-slate-300 transition-all p-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4"
+          {visits.length > 0 && (
+            <Link
+              to="/history"
+              className="text-xs font-semibold text-[#0F766E] hover:underline flex items-center gap-1"
             >
-              <div className="space-y-2 max-w-2xl">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="badge badge-teal text-[11px] font-semibold">
-                    {visit.visit_date}
-                  </span>
-                  <span className="badge badge-gray text-[11px]">
-                    {visit.specialization || 'Consultation'}
-                  </span>
-                  <span className="text-xs text-[#64748B]">
-                    {visit.hospital_name}
-                  </span>
-                </div>
-
-                <h3 className="font-bold text-base text-[#0B1C30] flex items-center gap-2">
-                  <span>{visit.doctor_name}</span>
-                </h3>
-
-                <div className="text-xs text-[#64748B] space-y-1">
-                  <div>
-                    <strong className="text-[#0B1C30]">Reason: </strong>
-                    {visit.reason}
-                  </div>
-                  <div>
-                    <strong className="text-[#0B1C30]">Diagnosis: </strong>
-                    {visit.diagnosis}
-                  </div>
-                </div>
-
-                {/* Attached Reports Pill preview */}
-                {visit.reports && visit.reports.length > 0 && (
-                  <div className="pt-2 flex flex-wrap gap-2 items-center">
-                    <span className="text-[11px] text-[#64748B] font-medium">Reports:</span>
-                    {visit.reports.map((rep) => (
-                      <button
-                        key={rep.id}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setSelectedReport({ ...rep, doctor_name: visit.doctor_name, hospital_name: visit.hospital_name });
-                        }}
-                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-teal-50 border border-teal-100 text-[#0F766E] text-[11px] font-medium hover:bg-teal-100 transition-colors"
-                      >
-                        <FileText className="w-3 h-3" />
-                        <span>{rep.report_name || rep.file_name}</span>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              <div className="flex sm:flex-col items-end gap-2 w-full md:w-auto shrink-0 pt-2 md:pt-0 border-t md:border-t-0 border-slate-100">
-                <span className="text-xs text-[#64748B] hidden sm:block">
-                  {visit.reports?.length || 0} document{visit.reports?.length === 1 ? '' : 's'}
-                </span>
-                <Link
-                  to={`/history/${visit.id}`}
-                  className="btn btn-secondary !min-h-[38px] !px-4 text-xs font-semibold w-full sm:w-auto flex items-center justify-center gap-1.5"
-                >
-                  <span>View Details</span>
-                  <ArrowRight className="w-3.5 h-3.5" />
-                </Link>
-              </div>
-            </div>
-          ))}
+              <span>View All History</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </Link>
+          )}
         </div>
+
+        {visits.length === 0 ? (
+          <div className="card p-8 text-center flex flex-col items-center justify-center">
+            <div className="w-12 h-12 rounded-xl bg-teal-50 text-[#0F766E] flex items-center justify-center mb-3">
+              <FolderOpen className="w-6 h-6" />
+            </div>
+            <h3 className="font-bold text-sm text-[#0B1C30] mb-1">No medical visits recorded yet</h3>
+            <p className="text-xs text-[#64748B] max-w-sm mb-4">
+              Click &apos;Add Visit Report&apos; to record your doctor consultations, diagnoses, and upload medical reports.
+            </p>
+            <button
+              onClick={() => navigate('/add-visit')}
+              className="btn btn-primary text-xs flex items-center gap-1.5"
+            >
+              <PlusCircle className="w-4 h-4" />
+              <span>Add First Visit</span>
+            </button>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {visits.slice(0, 3).map((visit) => (
+              <div
+                key={visit.id}
+                className="card hover:border-slate-300 transition-all p-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4"
+              >
+                <div className="space-y-2 max-w-2xl">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="badge badge-teal text-[11px] font-semibold">
+                      {visit.visit_date}
+                    </span>
+                    <span className="badge badge-gray text-[11px]">
+                      {visit.specialization || 'Consultation'}
+                    </span>
+                    {visit.hospital_name && (
+                      <span className="text-xs text-[#64748B]">
+                        {visit.hospital_name}
+                      </span>
+                    )}
+                  </div>
+
+                  <h3 className="font-bold text-base text-[#0B1C30] flex items-center gap-2">
+                    <span>{visit.doctor_name}</span>
+                  </h3>
+
+                  <div className="text-xs text-[#64748B] space-y-1">
+                    {visit.reason && (
+                      <div>
+                        <strong className="text-[#0B1C30]">Reason: </strong>
+                        {visit.reason}
+                      </div>
+                    )}
+                    {visit.diagnosis && (
+                      <div>
+                        <strong className="text-[#0B1C30]">Diagnosis: </strong>
+                        {visit.diagnosis}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Attached Reports Pill preview */}
+                  {visit.reports && visit.reports.length > 0 && (
+                    <div className="pt-2 flex flex-wrap gap-2 items-center">
+                      <span className="text-[11px] text-[#64748B] font-medium">Reports:</span>
+                      {visit.reports.map((rep) => (
+                        <button
+                          key={rep.id}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedReport({ ...rep, doctor_name: visit.doctor_name, hospital_name: visit.hospital_name });
+                          }}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-teal-50 border border-teal-100 text-[#0F766E] text-[11px] font-medium hover:bg-teal-100 transition-colors cursor-pointer"
+                        >
+                          <FileText className="w-3 h-3" />
+                          <span>{rep.report_name || rep.file_name}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex sm:flex-col items-end gap-2 w-full md:w-auto shrink-0 pt-2 md:pt-0 border-t md:border-t-0 border-slate-100">
+                  <span className="text-xs text-[#64748B] hidden sm:block">
+                    {visit.reports?.length || 0} document{visit.reports?.length === 1 ? '' : 's'}
+                  </span>
+                  <Link
+                    to={`/history/${visit.id}`}
+                    className="btn btn-secondary !min-h-[38px] !px-4 text-xs font-semibold w-full sm:w-auto flex items-center justify-center gap-1.5"
+                  >
+                    <span>View Details</span>
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </Link>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Report Viewer Modal */}

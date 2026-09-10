@@ -45,13 +45,19 @@ export const AuthProvider = ({ children }) => {
           const storedSession = localStorage.getItem('caretrack_auth_session');
           if (storedSession) {
             const profile = await api.getPatientProfile();
-            const fallbackUser = {
-              id: profile?.auth_user_id || profile?.id || 'patient-user-1',
-              email: profile?.email || 'patient@example.com',
-              phone: profile?.phone || '+91 98765 43210'
-            };
-            setUser(fallbackUser);
-            setPatient(profile);
+            if (profile) {
+              const fallbackUser = {
+                id: profile?.auth_user_id || profile?.id || 'patient-user-1',
+                email: profile?.email || '',
+                phone: profile?.phone || ''
+              };
+              setUser(fallbackUser);
+              setPatient(profile);
+            } else {
+              localStorage.removeItem('caretrack_auth_session');
+              setUser(null);
+              setPatient(null);
+            }
           }
         }
       } catch (err) {
@@ -132,6 +138,10 @@ export const AuthProvider = ({ children }) => {
 
   const register = async (formData) => {
     setAuthError(null);
+    // Clear any prior cached local session
+    localStorage.removeItem('caretrack_auth_session');
+    localStorage.removeItem('caretrack_patient');
+    
     const res = await api.registerPatient(formData);
     
     localStorage.setItem('caretrack_auth_session', 'true');
@@ -150,6 +160,9 @@ export const AuthProvider = ({ children }) => {
       console.warn('Signout warning:', err);
     }
     localStorage.removeItem('caretrack_auth_session');
+    localStorage.removeItem('caretrack_patient');
+    localStorage.removeItem('caretrack_visits');
+    localStorage.removeItem('caretrack_reports');
     setUser(null);
     setPatient(null);
   };
