@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Phone, Mail, Lock, ShieldCheck, ArrowRight, Activity, AlertCircle, UserPlus, Sparkles } from 'lucide-react';
+import { Phone, Mail, Lock, ShieldCheck, ArrowRight, Activity, AlertCircle, UserPlus, Sparkles, MessageCircle } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 
@@ -9,11 +9,11 @@ export default function Login() {
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [usePassword, setUsePassword] = useState(false);
+  const [usePassword, setUsePassword] = useState(true); // Default to Email + Password
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
 
-  const { loginWithPhone, loginWithEmail, loginWithPassword, isSupabaseConfigured } = useAuth();
+  const { loginWithPhone, loginWithWhatsApp, loginWithEmail, loginWithPassword, isSupabaseConfigured } = useAuth();
   const { showSuccess, showError } = useToast();
   const navigate = useNavigate();
 
@@ -21,8 +21,8 @@ export default function Login() {
     if (errorMessage) setErrorMessage('');
   };
 
-  const handlePhoneSubmit = async (e) => {
-    e.preventDefault();
+  const handlePhoneSubmit = async (e, isWhatsApp = false) => {
+    if (e) e.preventDefault();
     setErrorMessage('');
     if (!phone || phone.length < 10) {
       const msg = 'Please enter a valid 10-digit mobile number.';
@@ -33,9 +33,15 @@ export default function Login() {
 
     setLoading(true);
     try {
-      await loginWithPhone(phone);
-      showSuccess(`OTP sent to +91 ${phone}`);
-      navigate('/verify-otp', { state: { type: 'phone', target: phone } });
+      if (isWhatsApp) {
+        await loginWithWhatsApp(phone);
+        showSuccess(`Verification code sent to your WhatsApp: +91 ${phone}`);
+        navigate('/verify-otp', { state: { type: 'whatsapp', target: phone } });
+      } else {
+        await loginWithPhone(phone);
+        showSuccess(`OTP sent to +91 ${phone}`);
+        navigate('/verify-otp', { state: { type: 'phone', target: phone } });
+      }
     } catch (err) {
       const msg = err.message || 'Failed to authenticate. Please try again.';
       setErrorMessage(msg);
@@ -173,9 +179,9 @@ export default function Login() {
             </button>
           </div>
 
-          {/* Option A: Phone Number Login */}
+          {/* Option A: Phone / WhatsApp Login */}
           {authMethod === 'phone' && (
-            <form onSubmit={handlePhoneSubmit} className="space-y-5">
+            <form onSubmit={(e) => handlePhoneSubmit(e, true)} className="space-y-4">
               <div>
                 <label className="block text-xs font-semibold text-[#0B1C30] uppercase tracking-wider mb-1.5">
                   Mobile Phone Number
@@ -201,24 +207,39 @@ export default function Login() {
                     required
                   />
                 </div>
-                <p className="mt-1 text-[11px] text-[#64748B]">
-                  We will send a 6-digit one-time password (OTP) via SMS.
+                <p className="mt-1.5 text-[11px] text-[#64748B] flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block shrink-0" />
+                  <span>Receive instant verification OTP code on WhatsApp or SMS.</span>
                 </p>
               </div>
 
+              {/* Primary WhatsApp OTP Button */}
               <button
-                type="submit"
+                type="button"
+                onClick={(e) => handlePhoneSubmit(e, true)}
                 disabled={loading}
-                className="w-full btn btn-primary font-semibold shadow-xs flex items-center justify-center gap-2"
+                className="w-full py-2.5 px-4 rounded-xl bg-[#25D366] hover:bg-[#20ba59] active:scale-[0.99] text-white font-bold text-xs shadow-md shadow-emerald-600/15 transition-all flex items-center justify-center gap-2 cursor-pointer"
               >
                 {loading ? (
                   <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                 ) : (
                   <>
-                    <span>Continue with Phone</span>
+                    <MessageCircle className="w-4 h-4 fill-white text-[#25D366]" />
+                    <span>Send OTP via WhatsApp</span>
                     <ArrowRight className="w-4 h-4" />
                   </>
                 )}
+              </button>
+
+              {/* Alternate SMS OTP Button */}
+              <button
+                type="button"
+                onClick={(e) => handlePhoneSubmit(e, false)}
+                disabled={loading}
+                className="w-full btn btn-secondary text-xs font-semibold flex items-center justify-center gap-2"
+              >
+                <Phone className="w-3.5 h-3.5 text-[#0F766E]" />
+                <span>Send OTP via SMS</span>
               </button>
             </form>
           )}

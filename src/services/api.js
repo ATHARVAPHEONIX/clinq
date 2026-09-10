@@ -193,6 +193,37 @@ export const api = {
   },
 
   // --- AUTH SERVICES ---
+  async sendWhatsAppOtp(phone) {
+    const cleanDigits = phone.replace(/\D/g, '').slice(-10);
+    if (!cleanDigits || cleanDigits.length !== 10) {
+      throw new Error('Please enter a valid 10-digit mobile number.');
+    }
+
+    const formattedPhone = `+91 ${cleanDigits.slice(0, 5)} ${cleanDigits.slice(5)}`;
+    const mockOtp = '123456';
+    const messageText = `*CareTrack Patient Portal*\nYour 6-digit WhatsApp verification code is: *${mockOtp}*.\nValid for 10 minutes. Do not share this OTP with anyone.`;
+    const whatsappUrl = `https://api.whatsapp.com/send?phone=91${cleanDigits}&text=${encodeURIComponent(messageText)}`;
+
+    setLocalData(`wa_otp_${cleanDigits}`, {
+      otp: mockOtp,
+      createdAt: Date.now(),
+      phone: cleanDigits
+    });
+
+    await new Promise(r => setTimeout(r, 350));
+    return {
+      success: true,
+      otp: mockOtp,
+      whatsappUrl,
+      formattedPhone,
+      message: `WhatsApp OTP sent to +91 ${cleanDigits}`
+    };
+  },
+
+  async verifyWhatsAppOtp(phone, otp) {
+    return await this.verifyPhoneOtp(phone, otp);
+  },
+
   async sendPhoneOtp(phone) {
     const cleanDigits = phone.replace(/\D/g, '').slice(-10);
     if (!cleanDigits || cleanDigits.length !== 10) {

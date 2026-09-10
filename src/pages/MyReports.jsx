@@ -12,34 +12,44 @@ import {
   HardDrive, 
   Building2,
   FolderOpen,
-  ArrowUpDown
+  ArrowUpDown,
+  Sparkles,
+  Activity,
+  ShieldCheck
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
 import ReportViewerModal from '../components/ReportViewerModal';
+import AIClinicalOverviewModal from '../components/AIClinicalOverviewModal';
 
 export default function MyReports() {
   const { patient } = useAuth();
   const navigate = useNavigate();
   const [reports, setReports] = useState([]);
+  const [visits, setVisits] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterType, setFilterType] = useState('All');
   const [sortOrder, setSortOrder] = useState('desc');
   const [selectedReport, setSelectedReport] = useState(null);
+  const [showAIModal, setShowAIModal] = useState(false);
 
   useEffect(() => {
-    const fetchReports = async () => {
+    const fetchData = async () => {
       try {
-        const data = await api.getAllReports(patient?.id);
-        setReports(data || []);
+        const [repData, visitData] = await Promise.all([
+          api.getAllReports(patient?.id),
+          api.getMedicalHistory(patient?.id)
+        ]);
+        setReports(repData || []);
+        setVisits(visitData || []);
       } catch (err) {
         console.error('Failed to load reports:', err);
       } finally {
         setLoading(false);
       }
     };
-    fetchReports();
+    fetchData();
   }, [patient?.id]);
 
   const reportTypes = ['All', 'Blood Test', 'ECG', 'X-Ray', 'MRI', 'CT Scan', 'Prescription', 'Lab Report', 'Other'];
@@ -92,12 +102,50 @@ export default function MyReports() {
           </p>
         </div>
 
+        <div className="flex items-center gap-2.5 flex-wrap sm:flex-nowrap">
+          <button
+            onClick={() => setShowAIModal(true)}
+            className="btn btn-secondary !border-teal-300 bg-teal-50/70 hover:bg-teal-100 text-[#0F766E] text-xs flex items-center gap-1.5 shadow-xs font-semibold"
+          >
+            <Sparkles className="w-4 h-4 text-[#0F766E] animate-pulse" />
+            <span>AI Reports Overview</span>
+          </button>
+
+          <button
+            onClick={() => navigate('/add-visit')}
+            className="btn btn-primary text-xs flex items-center gap-2 shadow-xs shrink-0"
+          >
+            <Upload className="w-4 h-4" />
+            <span>Upload New Report</span>
+          </button>
+        </div>
+      </div>
+
+      {/* AI Overview Banner */}
+      <div className="card !p-4 bg-gradient-to-r from-teal-900 to-[#0F766E] text-white rounded-2xl shadow-md flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+        <div className="flex items-start gap-3.5">
+          <div className="w-10 h-10 rounded-xl bg-white/15 backdrop-blur-md flex items-center justify-center shrink-0 mt-0.5">
+            <Sparkles className="w-5 h-5 text-teal-200" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <h3 className="text-sm font-bold tracking-tight">AI Clinical Health & Reports Summary</h3>
+              <span className="bg-teal-400/20 text-teal-200 text-[10px] font-semibold px-2 py-0.2 rounded-full border border-teal-300/30">
+                {patient?.full_name || 'Patient'} Only
+              </span>
+            </div>
+            <p className="text-xs text-teal-100/90 mt-0.5 leading-relaxed max-w-2xl">
+              Our clinical AI synthesizes your diagnostic lab tests, ECGs, blood profiles, and prescriptions to detect health risks and provide preventative care guidance.
+            </p>
+          </div>
+        </div>
+
         <button
-          onClick={() => navigate('/add-visit')}
-          className="btn btn-primary text-xs flex items-center gap-2 shadow-xs shrink-0 self-start sm:self-auto"
+          onClick={() => setShowAIModal(true)}
+          className="px-4 py-2 bg-white text-[#0F766E] hover:bg-teal-50 text-xs font-bold rounded-xl shadow-xs shrink-0 transition-all flex items-center gap-1.5 cursor-pointer"
         >
-          <Upload className="w-4 h-4" />
-          <span>Upload New Report</span>
+          <Activity className="w-3.5 h-3.5 text-[#0F766E]" />
+          <span>View AI Overview</span>
         </button>
       </div>
 
@@ -226,6 +274,15 @@ export default function MyReports() {
           onClose={() => setSelectedReport(null)}
         />
       )}
+
+      {/* AI Clinical Overview Modal */}
+      <AIClinicalOverviewModal
+        isOpen={showAIModal}
+        onClose={() => setShowAIModal(false)}
+        patient={patient}
+        visits={visits}
+        reports={reports}
+      />
     </div>
   );
 }

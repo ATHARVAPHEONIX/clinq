@@ -1,13 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useLocation, useNavigate, Link } from 'react-router-dom';
-import { ShieldCheck, ArrowLeft, RefreshCw, CheckCircle2, AlertCircle, UserPlus, Sparkles } from 'lucide-react';
+import { ShieldCheck, ArrowLeft, RefreshCw, CheckCircle2, AlertCircle, UserPlus, Sparkles, MessageCircle, ExternalLink } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 
 export default function VerifyOtp() {
   const location = useLocation();
   const navigate = useNavigate();
-  const { type = 'phone', target = '+91 98765 43210' } = location.state || {};
+  const { type = 'whatsapp', target = '+91 98765 43210' } = location.state || {};
 
   const [otp, setOtp] = useState(['', '', '', '', '', '']);
   const [timer, setTimer] = useState(45);
@@ -16,7 +16,7 @@ export default function VerifyOtp() {
   const [errorMessage, setErrorMessage] = useState('');
 
   const inputRefs = useRef([]);
-  const { verifyPhoneOtp, verifyEmailOtp, loginWithPhone, loginWithEmail, isSupabaseConfigured } = useAuth();
+  const { verifyPhoneOtp, verifyWhatsAppOtp, verifyEmailOtp, loginWithPhone, loginWithWhatsApp, loginWithEmail, isSupabaseConfigured } = useAuth();
   const { showSuccess, showError } = useToast();
 
   useEffect(() => {
@@ -31,9 +31,9 @@ export default function VerifyOtp() {
 
   const maskTarget = (val, targetType) => {
     if (!val) return '******';
-    if (targetType === 'phone') {
+    if (targetType === 'phone' || targetType === 'whatsapp') {
       const clean = val.replace(/\s+/g, '');
-      return `******${clean.slice(-4)}`;
+      return `+91 ******${clean.slice(-4)}`;
     }
     const [name, domain] = val.split('@');
     if (!domain) return val;
@@ -84,7 +84,9 @@ export default function VerifyOtp() {
 
     setLoading(true);
     try {
-      if (type === 'phone') {
+      if (type === 'whatsapp') {
+        await verifyWhatsAppOtp(target, fullOtp);
+      } else if (type === 'phone') {
         await verifyPhoneOtp(target, fullOtp);
       } else {
         await verifyEmailOtp(target, fullOtp);
@@ -105,7 +107,9 @@ export default function VerifyOtp() {
     setErrorMessage('');
     setLoading(true);
     try {
-      if (type === 'phone') {
+      if (type === 'whatsapp') {
+        await loginWithWhatsApp(target);
+      } else if (type === 'phone') {
         await loginWithPhone(target);
       } else {
         await loginWithEmail(target);
@@ -124,21 +128,40 @@ export default function VerifyOtp() {
     }
   };
 
+  const isWhatsApp = type === 'whatsapp';
+
   return (
     <div className="min-h-screen bg-[#FAF8FF] flex flex-col justify-center py-12 sm:px-6 lg:px-8">
       <div className="sm:mx-auto sm:w-full sm:max-w-md">
         <div className="flex justify-center items-center gap-2 mb-4">
-          <div className="w-12 h-12 rounded-2xl bg-[#0F766E] text-white flex items-center justify-center font-bold text-xl shadow-md shadow-teal-900/10">
-            <ShieldCheck className="w-7 h-7" />
+          <div className={`w-12 h-12 rounded-2xl flex items-center justify-center font-bold text-xl shadow-md ${
+            isWhatsApp ? 'bg-[#25D366] text-white shadow-emerald-600/15' : 'bg-[#0F766E] text-white shadow-teal-900/10'
+          }`}>
+            {isWhatsApp ? <MessageCircle className="w-7 h-7 fill-white" /> : <ShieldCheck className="w-7 h-7" />}
           </div>
         </div>
         <h2 className="text-center text-xl font-bold text-[#0B1C30]">
-          Verify {type === 'phone' ? 'Phone Number' : 'Email Address'}
+          {isWhatsApp ? 'Verify WhatsApp OTP' : type === 'phone' ? 'Verify Mobile OTP' : 'Verify Email Address'}
         </h2>
         <p className="mt-1 text-center text-xs text-[#64748B]">
-          We've sent a 6-digit verification code to{' '}
+          We&apos;ve sent a 6-digit verification code to {isWhatsApp ? 'your WhatsApp account' : 'your device'}:{' '}
           <span className="font-semibold text-[#0B1C30]">{maskTarget(target, type)}</span>
         </p>
+
+        {isWhatsApp && (
+          <div className="mt-3 flex justify-center">
+            <a
+              href={`https://web.whatsapp.com/`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-full text-[11px] font-semibold transition-all"
+            >
+              <MessageCircle className="w-3.5 h-3.5 text-[#25D366]" />
+              <span>Open WhatsApp Web / App</span>
+              <ExternalLink className="w-3 h-3 text-emerald-600" />
+            </a>
+          </div>
+        )}
       </div>
 
       <div className="mt-6 sm:mx-auto sm:w-full sm:max-w-md px-4 sm:px-0">

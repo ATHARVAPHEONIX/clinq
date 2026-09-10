@@ -10,13 +10,20 @@ import {
   X, 
   Building2, 
   Plus, 
-  Pill,
-  HardDrive,
-  Info
+  Pill, 
+  HardDrive, 
+  Info,
+  Sparkles,
+  Activity,
+  ShieldCheck,
+  AlertTriangle,
+  ChevronRight
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 import { api } from '../services/api';
+import { aiService } from '../services/aiService';
+import AIClinicalOverviewModal from '../components/AIClinicalOverviewModal';
 
 export default function AddVisit() {
   const navigate = useNavigate();
@@ -26,6 +33,10 @@ export default function AddVisit() {
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
+
+  const [showAIModal, setShowAIModal] = useState(false);
+  const [aiInsight, setAiInsight] = useState(null);
+  const [analyzingAI, setAnalyzingAI] = useState(false);
 
   const [visitForm, setVisitForm] = useState({
     visit_date: new Date().toISOString().split('T')[0],
@@ -46,6 +57,30 @@ export default function AddVisit() {
   ]);
 
   const [uploadedReports, setUploadedReports] = useState([]);
+
+  const generateInlineAIInsight = async () => {
+    if (!patient) return;
+    setAnalyzingAI(true);
+    try {
+      const [pastVisits, pastReports] = await Promise.all([
+        api.getMedicalHistory(patient.id),
+        api.getAllReports(patient.id)
+      ]);
+      const res = await aiService.generateClinicalOverview({
+        patient,
+        visits: pastVisits || [],
+        reports: pastReports || [],
+        pendingVisit: { ...visitForm, prescription: medications.filter(m => m.name) },
+        pendingReports: uploadedReports
+      });
+      setAiInsight(res);
+      showSuccess('AI Clinical Overview updated for this patient.');
+    } catch (err) {
+      console.warn('AI Clinical analysis error:', err);
+    } finally {
+      setAnalyzingAI(false);
+    }
+  };
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
@@ -515,16 +550,100 @@ export default function AddVisit() {
                 </div>
               </div>
             )}
+
+            {/* AI Clinical Overview & Analysis Widget in Step 3 */}
+            <div className="p-4 bg-gradient-to-r from-teal-50/90 via-white to-emerald-50/80 border border-teal-200 rounded-2xl space-y-3 shadow-xs">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-[#0F766E] text-white flex items-center justify-center shrink-0 shadow-xs">
+                    <Sparkles className="w-5 h-5 text-teal-200" />
+                  </div>
+                  <div>
+                    <h4 className="font-bold text-xs text-[#0B1C30] flex items-center gap-2">
+                      <span>AI Clinical Overview & Health Synthesis</span>
+                      <span className="badge badge-teal text-[10px]">Database Analysis</span>
+                    </h4>
+                    <p className="text-[11px] text-[#64748B]">
+                      Analyzes {patient?.full_name || 'Patient'}&apos;s medical history, prescriptions, and attached diagnostic reports.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={generateInlineAIInsight}
+                    disabled={analyzingAI}
+                    className="btn btn-primary !py-1.5 !px-3 text-xs font-semibold flex items-center gap-1.5 shadow-xs cursor-pointer"
+                  >
+                    {analyzingAI ? (
+                      <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    ) : (
+                      <Sparkles className="w-3.5 h-3.5" />
+                    )}
+                    <span>{aiInsight ? 'Refresh AI Insights' : 'Generate AI Overview'}</span>
+                  </button>
+
+                  {aiInsight && (
+                    <button
+                      type="button"
+                      onClick={() => setShowAIModal(true)}
+                      className="btn btn-secondary !py-1.5 !px-2.5 text-xs font-semibold text-[#0F766E]"
+                    >
+                      <span>Full View</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Inline AI Insight Card */}
+              {aiInsight && (
+                <div className="pt-3 border-t border-teal-200/60 space-y-2.5 animate-in fade-in">
+                  <div className="p-3 bg-white rounded-xl border border-teal-100 text-xs text-[#0B1C30] shadow-xs">
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="font-bold text-[#0F766E] flex items-center gap-1">
+                        <Activity className="w-3.5 h-3.5" />
+                        <span>Clinical Intelligence Summary:</span>
+                      </span>
+                      <span className="text-[10px] text-slate-400">MRN: {aiInsight.patientMRN}</span>
+                    </div>
+                    <p className="leading-relaxed">{aiInsight.summary}</p>
+                  </div>
+
+                  {aiInsight.safetyAlerts.length > 0 && (
+                    <div className="p-2.5 bg-rose-50 border border-rose-200 rounded-xl text-xs space-y-1">
+                      <div className="font-bold text-rose-800 flex items-center gap-1.5">
+                        <AlertTriangle className="w-3.5 h-3.5 text-rose-600" />
+                        <span>Medication Safety / Allergy Alert ({aiInsight.safetyAlerts.length})</span>
+                      </div>
+                      {aiInsight.safetyAlerts.map((a, i) => (
+                        <div key={i} className="text-rose-700 text-[11px] pl-5">{a.reason}</div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
         )}
 
         {/* STEP 4: REVIEW & CONFIRM */}
         {step === 4 && (
           <div className="space-y-5">
-            <h3 className="font-bold text-lg text-[#0B1C30] flex items-center gap-2 pb-3 border-b border-slate-100">
-              <CheckCircle2 className="w-5 h-5 text-[#0F766E]" />
-              <span>Step 4 — Review & Confirm Visit Record</span>
-            </h3>
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <h3 className="font-bold text-lg text-[#0B1C30] flex items-center gap-2">
+                <CheckCircle2 className="w-5 h-5 text-[#0F766E]" />
+                <span>Step 4 — Review & Confirm Visit Record</span>
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowAIModal(true)}
+                className="btn btn-secondary !border-teal-300 bg-teal-50/70 text-[#0F766E] text-xs flex items-center gap-1.5 font-semibold"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-[#0F766E]" />
+                <span>AI Clinical Overview</span>
+              </button>
+            </div>
 
             <div className="bg-slate-50 border border-[#E2E8F0] rounded-xl p-5 text-xs space-y-4">
               <div className="grid grid-cols-2 gap-3">
@@ -548,12 +667,22 @@ export default function AddVisit() {
                   </div>
                 </div>
               )}
+
+              {aiInsight && (
+                <div className="pt-3 border-t border-slate-200">
+                  <span className="text-[#0F766E] block mb-1 font-bold flex items-center gap-1">
+                    <Sparkles className="w-3 h-3" />
+                    <span>AI Clinical Assessment:</span>
+                  </span>
+                  <p className="text-slate-700">{aiInsight.summary}</p>
+                </div>
+              )}
             </div>
 
             <div className="p-3.5 bg-teal-50 border border-teal-100 rounded-xl text-xs text-teal-900 flex items-start gap-2">
               <Info className="w-4 h-4 text-[#0F766E] shrink-0 mt-0.5" />
               <span>
-                This consultation entry will be appended directly to the top of your medical timeline and encrypted with your patient key.
+                This consultation entry and attached diagnostic files will be stored in your encrypted medical timeline.
               </span>
             </div>
           </div>
@@ -604,6 +733,17 @@ export default function AddVisit() {
           )}
         </div>
       </div>
+
+      {/* AI Clinical Overview Modal */}
+      <AIClinicalOverviewModal
+        isOpen={showAIModal}
+        onClose={() => setShowAIModal(false)}
+        patient={patient}
+        visits={[]}
+        reports={[]}
+        pendingVisit={{ ...visitForm, prescription: medications.filter(m => m.name) }}
+        pendingReports={uploadedReports}
+      />
     </div>
   );
 }

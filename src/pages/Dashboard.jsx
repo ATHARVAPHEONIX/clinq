@@ -9,15 +9,17 @@ import {
   Building2, 
   Stethoscope, 
   ArrowRight, 
-  ExternalLink,
-  Clock,
-  Sparkles,
-  ShieldCheck,
-  Download
+  ExternalLink, 
+  Clock, 
+  Sparkles, 
+  ShieldCheck, 
+  Download,
+  Activity
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../services/api';
 import ReportViewerModal from '../components/ReportViewerModal';
+import AIClinicalOverviewModal from '../components/AIClinicalOverviewModal';
 
 export default function Dashboard() {
   const { patient, user } = useAuth();
@@ -26,6 +28,7 @@ export default function Dashboard() {
   const [reports, setReports] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedReport, setSelectedReport] = useState(null);
+  const [showAIModal, setShowAIModal] = useState(false);
 
   useEffect(() => {
     const loadData = async () => {
@@ -99,14 +102,21 @@ export default function Dashboard() {
           <div className="mt-6 flex flex-wrap gap-3">
             <button
               onClick={() => navigate('/add-visit')}
-              className="btn btn-primary text-xs flex items-center gap-2 shadow-xs"
+              className="btn btn-primary text-xs flex items-center gap-2 shadow-xs cursor-pointer"
             >
               <PlusCircle className="w-4 h-4" />
               <span>Add Visit Report</span>
             </button>
             <button
+              onClick={() => setShowAIModal(true)}
+              className="btn btn-secondary !border-teal-300 bg-teal-50/70 hover:bg-teal-100 text-[#0F766E] text-xs flex items-center gap-1.5 font-bold shadow-xs cursor-pointer"
+            >
+              <Sparkles className="w-4 h-4 text-[#0F766E] animate-pulse" />
+              <span>AI Clinical Insights</span>
+            </button>
+            <button
               onClick={() => navigate('/history')}
-              className="btn btn-secondary text-xs flex items-center gap-2"
+              className="btn btn-secondary text-xs flex items-center gap-2 cursor-pointer"
             >
               <History className="w-4 h-4" />
               <span>View Full Timeline</span>
@@ -307,6 +317,15 @@ export default function Dashboard() {
           onClose={() => setSelectedReport(null)}
         />
       )}
+
+      {/* AI Clinical Overview Modal */}
+      <AIClinicalOverviewModal
+        isOpen={showAIModal}
+        onClose={() => setShowAIModal(false)}
+        patient={patient}
+        visits={visits}
+        reports={reports}
+      />
     </div>
   );
 }

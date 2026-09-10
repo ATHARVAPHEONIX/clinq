@@ -69,6 +69,22 @@ export const AuthProvider = ({ children }) => {
     return await api.sendPhoneOtp(phone);
   };
 
+  const loginWithWhatsApp = async (phone) => {
+    setAuthError(null);
+    return await api.sendWhatsAppOtp(phone);
+  };
+
+  const verifyWhatsAppOtp = async (phone, otp) => {
+    setAuthError(null);
+    const res = await api.verifyWhatsAppOtp(phone, otp);
+    localStorage.setItem('caretrack_auth_session', 'true');
+    const profile = res.profile || (await api.getPatientProfile(res.user?.id));
+    const activeUser = res.user || { id: profile?.auth_user_id || 'whatsapp-user', phone };
+    setUser(activeUser);
+    setPatient(profile);
+    return res;
+  };
+
   const verifyPhoneOtp = async (phone, otp) => {
     setAuthError(null);
     const res = await api.verifyPhoneOtp(phone, otp);
@@ -154,7 +170,9 @@ export const AuthProvider = ({ children }) => {
         authError,
         isSupabaseConfigured,
         loginWithPhone,
+        loginWithWhatsApp,
         verifyPhoneOtp,
+        verifyWhatsAppOtp,
         loginWithEmail,
         verifyEmailOtp,
         loginWithPassword,
