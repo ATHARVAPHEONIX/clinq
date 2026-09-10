@@ -146,23 +146,7 @@ export default function Layout() {
           </a>
         </div>
 
-        {/* Quick Upload CTA */}
-        <div className="p-4 mx-4 mb-3 rounded-2xl bg-teal-50/60 border border-teal-100/80">
-          <div className="flex items-center gap-2 mb-1.5">
-            <ShieldCheck className="w-4 h-4 text-[#0F766E]" />
-            <span className="text-xs font-semibold text-[#0F766E]">Need to upload reports?</span>
-          </div>
-          <p className="text-[11px] text-[#64748B] mb-3">
-            Add your prescriptions and lab reports directly to your timeline.
-          </p>
-          <button
-            onClick={() => navigate('/add-visit')}
-            className="w-full btn btn-primary !min-h-[38px] !text-xs !py-1.5 font-semibold flex items-center justify-center gap-1.5 shadow-xs"
-          >
-            <Upload className="w-3.5 h-3.5" />
-            Add New Record
-          </button>
-        </div>
+        
 
         {/* Footer Logout */}
         <div className="p-4 border-t border-[#E2E8F0] flex items-center justify-between">

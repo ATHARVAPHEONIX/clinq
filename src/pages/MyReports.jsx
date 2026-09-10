@@ -111,13 +111,7 @@ export default function MyReports() {
             <span>AI Reports Overview</span>
           </button>
 
-          <button
-            onClick={() => navigate('/add-visit')}
-            className="btn btn-primary text-xs flex items-center gap-2 shadow-xs shrink-0"
-          >
-            <Upload className="w-4 h-4" />
-            <span>Upload New Report</span>
-          </button>
+          
         </div>
       </div>
 
@@ -197,15 +191,9 @@ export default function MyReports() {
           <p className="text-xs text-[#64748B] max-w-sm mb-6">
             {searchQuery 
               ? `No reports matching "${searchQuery}".`
-              : 'Upload your medical reports and test results to keep your health data centralized.'}
+              : 'Your diagnostic reports, lab test files, and prescriptions will appear here once added to your medical records.'}
           </p>
-          <button
-            onClick={() => navigate('/add-visit')}
-            className="btn btn-primary text-xs flex items-center gap-2"
-          >
-            <Upload className="w-4 h-4" />
-            <span>Upload First Report</span>
-          </button>
+          
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">

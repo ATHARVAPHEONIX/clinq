@@ -12,14 +12,22 @@ import {
   ArrowRight, 
   ArrowLeft,
   Activity,
-  ShieldCheck
+  ShieldCheck,
+  AlertCircle,
+  ExternalLink,
+  Loader2
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
+import { api } from '../services/api';
 
 export default function Register() {
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
+  const [validatingStep1, setValidatingStep1] = useState(false);
+  const [emailError, setEmailError] = useState('');
+  const [emailStatus, setEmailStatus] = useState('idle'); // 'idle' | 'checking' | 'valid' | 'invalid'
+  const [phoneError, setPhoneError] = useState('');
   const { register } = useAuth();
   const { showSuccess, showError } = useToast();
   const navigate = useNavigate();
@@ -55,31 +63,104 @@ export default function Register() {
   const handleChange = (e) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
+
+    if (name === 'email') {
+      setEmailError('');
+      setEmailStatus('idle');
+    }
+    if (name === 'phone') {
+      setPhoneError('');
+    }
   };
 
-  const validateStep = () => {
-    if (step === 1) {
-      if (!formData.full_name.trim()) {
-        showError('Please enter your full legal name.');
-        return false;
+  const handleEmailBlur = async () => {
+    const cleanEmail = formData.email ? formData.email.trim().toLowerCase() : '';
+    if (!cleanEmail) return;
+
+    if (!cleanEmail.includes('@') || !cleanEmail.includes('.')) {
+      setEmailError('Please enter a valid email address.');
+      setEmailStatus('invalid');
+      return;
+    }
+
+    setEmailStatus('checking');
+    try {
+      const result = await api.checkEmailAvailability(cleanEmail);
+      if (!result.available) {
+        setEmailError(result.error || 'This email is already registered. Please go to Login.');
+        setEmailStatus('invalid');
+      } else {
+        setEmailError('');
+        setEmailStatus('valid');
       }
-      if (!formData.email.includes('@')) {
-        showError('Please enter a valid email address.');
-        return false;
+    } catch (err) {
+      console.warn('Email check error:', err);
+      setEmailStatus('idle');
+    }
+  };
+
+  const validateAndProceedStep1 = async () => {
+    if (!formData.full_name.trim()) {
+      showError('Please enter your full legal name.');
+      return;
+    }
+
+    const cleanEmail = formData.email ? formData.email.trim().toLowerCase() : '';
+    if (!cleanEmail || !cleanEmail.includes('@') || !cleanEmail.includes('.')) {
+      setEmailError('Please enter a valid email address.');
+      setEmailStatus('invalid');
+      showError('Please enter a valid email address.');
+      return;
+    }
+
+    if (!formData.phone || formData.phone.replace(/\D/g, '').length < 10) {
+      setPhoneError('Please enter a valid 10-digit mobile number.');
+      showError('Please enter a valid 10-digit mobile number.');
+      return;
+    }
+
+    if (formData.password.length < 6) {
+      showError('Password must be at least 6 characters.');
+      return;
+    }
+    if (formData.password !== formData.confirm_password) {
+      showError('Passwords do not match.');
+      return;
+    }
+
+    // Perform immediate check against database for email and phone
+    setValidatingStep1(true);
+    try {
+      const emailCheck = await api.checkEmailAvailability(cleanEmail);
+      if (!emailCheck.available) {
+        setEmailError(emailCheck.error || 'This email is already registered. Please go to Login.');
+        setEmailStatus('invalid');
+        showError(emailCheck.error || 'This email is already registered. Please go to Login.');
+        setValidatingStep1(false);
+        return;
       }
-      if (!formData.phone || formData.phone.length < 10) {
-        showError('Please enter a valid 10-digit mobile number.');
-        return false;
+
+      const phoneCheck = await api.checkPhoneAvailability(formData.phone);
+      if (!phoneCheck.available) {
+        setPhoneError(phoneCheck.error || 'This phone number is already registered. Please go to Login.');
+        showError(phoneCheck.error || 'This phone number is already registered. Please go to Login.');
+        setValidatingStep1(false);
+        return;
       }
-      if (formData.password.length < 6) {
-        showError('Password must be at least 6 characters.');
-        return false;
-      }
-      if (formData.password !== formData.confirm_password) {
-        showError('Passwords do not match.');
-        return false;
-      }
-    } else if (step === 2) {
+
+      setEmailError('');
+      setEmailStatus('valid');
+      setPhoneError('');
+      setStep(2);
+    } catch (err) {
+      showError(err.message || 'Validation error. Please try again.');
+    } finally {
+      setValidatingStep1(false);
+    }
+  };
+
+  const validateOtherSteps = () => {
+    if (step === 2) {
       if (!formData.date_of_birth) {
         showError('Please enter your date of birth.');
         return false;
@@ -98,8 +179,12 @@ export default function Register() {
   };
 
   const nextStep = () => {
-    if (validateStep()) {
-      setStep(s => Math.min(s + 1, 5));
+    if (step === 1) {
+      validateAndProceedStep1();
+    } else {
+      if (validateOtherSteps()) {
+        setStep(s => Math.min(s + 1, 5));
+      }
     }
   };
 
@@ -199,18 +284,52 @@ export default function Register() {
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {/* Email with immediate validation feedback */}
                 <div>
-                  <label className="block text-xs font-semibold text-[#0B1C30] mb-1">Email Address *</label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-xs font-semibold text-[#0B1C30]">Email Address *</label>
+                    {emailStatus === 'checking' && (
+                      <span className="text-[10px] text-teal-600 flex items-center gap-1">
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                        Checking...
+                      </span>
+                    )}
+                    {emailStatus === 'valid' && (
+                      <span className="text-[10px] text-emerald-600 font-semibold flex items-center gap-1">
+                        <CheckCircle2 className="w-3 h-3" />
+                        Available
+                      </span>
+                    )}
+                  </div>
                   <input
                     type="email"
                     name="email"
                     value={formData.email}
                     onChange={handleChange}
+                    onBlur={handleEmailBlur}
                     placeholder="name@example.com"
-                    className="input-field"
+                    className={`input-field ${emailError ? '!border-rose-500 !bg-rose-50/30' : emailStatus === 'valid' ? '!border-emerald-500' : ''}`}
                     required
                   />
+
+                  {/* Immediate Error Callout if email is registered */}
+                  {emailError && (
+                    <div className="mt-1.5 p-2.5 rounded-lg bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-start justify-between gap-2 animate-in fade-in duration-200">
+                      <div className="flex items-start gap-1.5 min-w-0">
+                        <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                        <span className="leading-snug">{emailError}</span>
+                      </div>
+                      <Link
+                        to="/login"
+                        className="font-bold underline text-rose-800 hover:text-rose-900 shrink-0 text-[11px]"
+                      >
+                        Login &rarr;
+                      </Link>
+                    </div>
+                  )}
                 </div>
+
+                {/* Mobile Phone with immediate validation feedback */}
                 <div>
                   <label className="block text-xs font-semibold text-[#0B1C30] mb-1">Mobile Phone *</label>
                   <input
@@ -219,9 +338,15 @@ export default function Register() {
                     value={formData.phone}
                     onChange={handleChange}
                     placeholder="e.g. 9876543210"
-                    className="input-field"
+                    className={`input-field ${phoneError ? '!border-rose-500 !bg-rose-50/30' : ''}`}
                     required
                   />
+                  {phoneError && (
+                    <div className="mt-1.5 p-2 rounded-lg bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-center gap-1.5">
+                      <AlertCircle className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+                      <span>{phoneError}</span>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -358,31 +483,30 @@ export default function Register() {
                     </div>
                     <div>
                       <span className="font-bold text-xs text-[#0B1C30]">Ayushman Bharat Health Account (ABHA ID)</span>
-                      <span className="text-[10px] text-[#0F766E] font-medium ml-2 bg-teal-50 px-1.5 py-0.5 rounded border border-teal-200">
-                        Optional
-                      </span>
+                      <span className="badge bg-orange-100 text-orange-800 text-[10px] ml-2">Optional</span>
                     </div>
                   </div>
                   <a
                     href="https://abha.abdm.gov.in/abha/v3/register"
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-[11px] text-[#0F766E] hover:underline font-semibold flex items-center gap-1 cursor-pointer"
+                    className="text-[11px] text-orange-600 hover:text-orange-700 font-semibold flex items-center gap-1"
                   >
                     <span>Create ABHA</span>
-                    <ArrowRight className="w-3 h-3" />
+                    <ExternalLink className="w-3 h-3" />
                   </a>
                 </div>
+
                 <input
                   type="text"
                   name="abha_id"
                   value={formData.abha_id}
                   onChange={handleChange}
-                  placeholder="e.g. 14-digit ABHA Number (12-3456-7890-1234) or username@abdm"
-                  className="input-field bg-white text-xs font-mono font-medium"
+                  placeholder="14-digit ABHA Number (e.g. 12-3456-7890-1234) or user@abdm"
+                  className="input-field font-mono text-xs"
                 />
-                <p className="text-[10px] text-[#64748B]">
-                  Link your official Ayushman Bharat Digital Mission (ABDM) Health ID for unified national healthcare access.
+                <p className="text-[11px] text-[#64748B]">
+                  Link your Ayushman Bharat Digital Health Card to sync clinical records with ABDM nationwide.
                 </p>
               </div>
             </div>
@@ -393,26 +517,22 @@ export default function Register() {
             <div className="space-y-4">
               <h3 className="font-bold text-lg text-[#0B1C30] flex items-center gap-2 pb-3 border-b border-slate-100">
                 <HeartHandshake className="w-5 h-5 text-[#0F766E]" />
-                <span>Step 3 — Emergency Contact</span>
+                <span>Step 3 — Emergency Contact Information</span>
               </h3>
-              <p className="text-xs text-[#64748B]">
-                Who should our clinical staff reach out to during emergencies?
-              </p>
 
-              <div>
-                <label className="block text-xs font-semibold text-[#0B1C30] mb-1">Contact Name *</label>
-                <input
-                  type="text"
-                  name="emergency_contact_name"
-                  value={formData.emergency_contact_name}
-                  onChange={handleChange}
-                  placeholder="e.g. Contact Person Full Name"
-                  className="input-field"
-                  required
-                />
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div className="sm:col-span-1">
+                  <label className="block text-xs font-semibold text-[#0B1C30] mb-1">Contact Name *</label>
+                  <input
+                    type="text"
+                    name="emergency_contact_name"
+                    value={formData.emergency_contact_name}
+                    onChange={handleChange}
+                    placeholder="e.g. Priya Sharma"
+                    className="input-field"
+                    required
+                  />
+                </div>
                 <div>
                   <label className="block text-xs font-semibold text-[#0B1C30] mb-1">Relationship</label>
                   <input
@@ -420,7 +540,7 @@ export default function Register() {
                     name="emergency_contact_relation"
                     value={formData.emergency_contact_relation}
                     onChange={handleChange}
-                    placeholder="e.g. Spouse / Parent / Sibling"
+                    placeholder="e.g. Spouse / Parent"
                     className="input-field"
                   />
                 </div>
@@ -431,7 +551,7 @@ export default function Register() {
                     name="emergency_contact_phone"
                     value={formData.emergency_contact_phone}
                     onChange={handleChange}
-                    placeholder="e.g. 9876543211"
+                    placeholder="e.g. 9876543210"
                     className="input-field"
                     required
                   />
@@ -440,16 +560,13 @@ export default function Register() {
             </div>
           )}
 
-          {/* STEP 4: MEDICAL INFO (OPTIONAL) */}
+          {/* STEP 4: MEDICAL BASELINE */}
           {step === 4 && (
             <div className="space-y-4">
-              <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-                <h3 className="font-bold text-lg text-[#0B1C30] flex items-center gap-2">
-                  <FileHeart className="w-5 h-5 text-[#0F766E]" />
-                  <span>Step 4 — Medical History (Optional)</span>
-                </h3>
-                <span className="badge badge-gray text-[10px]">Optional</span>
-              </div>
+              <h3 className="font-bold text-lg text-[#0B1C30] flex items-center gap-2 pb-3 border-b border-slate-100">
+                <FileHeart className="w-5 h-5 text-[#0F766E]" />
+                <span>Step 4 — Medical Baseline & History</span>
+              </h3>
 
               <div>
                 <label className="block text-xs font-semibold text-[#0B1C30] mb-1">Known Allergies</label>
@@ -458,43 +575,43 @@ export default function Register() {
                   name="allergies"
                   value={formData.allergies}
                   onChange={handleChange}
-                  placeholder="e.g. Penicillin, Peanuts, Dust"
+                  placeholder="e.g. Penicillin, Peanuts, Dust (or leave blank if none)"
                   className="input-field"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-[#0B1C30] mb-1">Existing Medical Conditions</label>
+                <label className="block text-xs font-semibold text-[#0B1C30] mb-1">Existing Conditions / Chronic Illnesses</label>
                 <input
                   type="text"
                   name="medical_conditions"
                   value={formData.medical_conditions}
                   onChange={handleChange}
-                  placeholder="e.g. Hypertension, Diabetes Type 2"
+                  placeholder="e.g. Hypertension, Type 2 Diabetes, Asthma"
                   className="input-field"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-[#0B1C30] mb-1">Current Medications</label>
+                <label className="block text-xs font-semibold text-[#0B1C30] mb-1">Ongoing Medications</label>
                 <input
                   type="text"
                   name="medications"
                   value={formData.medications}
                   onChange={handleChange}
-                  placeholder="e.g. Daily vitamins or prescribed medicines"
+                  placeholder="e.g. Metformin 500mg, Amlodipine 5mg"
                   className="input-field"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-[#0B1C30] mb-1">Previous Surgeries</label>
+                <label className="block text-xs font-semibold text-[#0B1C30] mb-1">Past Surgeries or Major Hospitalizations</label>
                 <input
                   type="text"
                   name="surgeries"
                   value={formData.surgeries}
                   onChange={handleChange}
-                  placeholder="e.g. Appendectomy (2020)"
+                  placeholder="e.g. Appendectomy (2021)"
                   className="input-field"
                 />
               </div>
@@ -553,10 +670,20 @@ export default function Register() {
               <button
                 type="button"
                 onClick={nextStep}
+                disabled={validatingStep1}
                 className="btn btn-primary text-xs flex items-center gap-1.5 ml-auto cursor-pointer"
               >
-                <span>Continue</span>
-                <ArrowRight className="w-4 h-4" />
+                {validatingStep1 ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Verifying...</span>
+                  </>
+                ) : (
+                  <>
+                    <span>Continue</span>
+                    <ArrowRight className="w-4 h-4" />
+                  </>
+                )}
               </button>
             ) : (
               <button

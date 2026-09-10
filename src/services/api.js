@@ -68,6 +68,93 @@ export const api = {
   isConfigured: isSupabaseConfigured,
 
   // Helper to find patient locally from genuine registered/saved directory
+    // Immediate email uniqueness & format check for registration
+  async checkEmailAvailability(email) {
+    const cleanEmail = email ? email.trim().toLowerCase() : '';
+    if (!cleanEmail || !cleanEmail.includes('@') || !cleanEmail.includes('.')) {
+      return { available: false, error: 'Please enter a valid email address (e.g. name@example.com).' };
+    }
+
+    // 1. Check local directory
+    const dir = getLocalData('patients_directory', []) || [];
+    const localMatch = dir.find(p => p.email && p.email.trim().toLowerCase() === cleanEmail);
+    if (localMatch) {
+      return { available: false, error: 'This email is already registered. Please go to Login.' };
+    }
+
+    // 2. Check current active patient
+    const current = getLocalData('patient', null);
+    if (current && current.email && current.email.trim().toLowerCase() === cleanEmail) {
+      return { available: false, error: 'This email is already registered. Please go to Login.' };
+    }
+
+    // 3. Check Supabase patients and patient_directory tables
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const { data: pList } = await supabase
+          .from('patients')
+          .select('id, email')
+          .ilike('email', cleanEmail)
+          .limit(1);
+
+        if (pList && pList.length > 0) {
+          return { available: false, error: 'This email is already registered. Please go to Login.' };
+        }
+
+        const { data: dList } = await supabase
+          .from('patient_directory')
+          .select('id, email')
+          .ilike('email', cleanEmail)
+          .limit(1);
+
+        if (dList && dList.length > 0) {
+          return { available: false, error: 'This email is already registered. Please go to Login.' };
+        }
+      } catch (err) {
+        console.warn('Supabase email availability check note:', err);
+      }
+    }
+
+    return { available: true };
+  },
+
+  // Immediate phone uniqueness check for registration
+  async checkPhoneAvailability(phone) {
+    const cleanDigits = phone ? phone.replace(/\D/g, '').slice(-10) : '';
+    if (!cleanDigits || cleanDigits.length !== 10) {
+      return { available: false, error: 'Please enter a valid 10-digit mobile number.' };
+    }
+
+    const dir = getLocalData('patients_directory', []) || [];
+    const localMatch = dir.find(p => {
+      const pDigits = p.phone ? p.phone.replace(/\D/g, '').slice(-10) : '';
+      return pDigits === cleanDigits;
+    });
+    if (localMatch) {
+      return { available: false, error: 'This phone number is already registered. Please go to Login.' };
+    }
+
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const p1 = cleanDigits.slice(0, 5);
+        const p2 = cleanDigits.slice(5);
+        const { data: pList } = await supabase
+          .from('patients')
+          .select('id, phone')
+          .or(`phone.ilike.%${cleanDigits}%,phone.ilike.%${p1}%${p2}%`)
+          .limit(1);
+
+        if (pList && pList.length > 0) {
+          return { available: false, error: 'This phone number is already registered. Please go to Login.' };
+        }
+      } catch (err) {
+        console.warn('Supabase phone check note:', err);
+      }
+    }
+
+    return { available: true };
+  },
+
   findLocalPatient({ phone, email }) {
     const cleanDigits = phone ? phone.replace(/\D/g, '').slice(-10) : '';
     const cleanEmail = email ? email.trim().toLowerCase() : '';
