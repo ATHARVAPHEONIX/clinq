@@ -132,7 +132,9 @@ export const api = {
         } else if (email) {
           query = query.ilike('email', email);
         } else if (cleanDigits) {
-          query = query.ilike('phone', `%${cleanDigits}%`);
+          const p1 = cleanDigits.slice(0, 5);
+          const p2 = cleanDigits.slice(5);
+          query = query.or(`phone.ilike.%${cleanDigits}%,phone.ilike.%${p1}%${p2}%,phone.ilike.%${p1} ${p2}%,phone.ilike.%+91%${p1}%`);
         }
 
         const { data: list } = await query.limit(1);
@@ -265,11 +267,14 @@ export const api = {
     let matchedProfile = null;
 
     if (isSupabaseConfigured && supabase) {
+      const p1 = cleanDigits.slice(0, 5);
+      const p2 = cleanDigits.slice(5);
+
       try {
         const { data: patientList } = await supabase
           .from('patients')
           .select('*')
-          .ilike('phone', `%${cleanDigits}%`)
+          .or(`phone.ilike.%${cleanDigits}%,phone.ilike.%${p1}%${p2}%,phone.ilike.%${p1} ${p2}%,phone.ilike.%+91%${p1}%`)
           .limit(1);
 
         if (patientList && patientList.length > 0) {

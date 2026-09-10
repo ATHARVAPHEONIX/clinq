@@ -488,32 +488,71 @@ export default function Login() {
 
           {/* STAGE 2: VERIFY 6-DIGIT OTP INLINE */}
           {otpStep === 'verify' && (
-            <form onSubmit={handleVerifyOtp} className="space-y-6 animate-in fade-in">
-              {/* WhatsApp Quick Link Helper if WhatsApp OTP */}
-              {otpType === 'whatsapp' && (
-                <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <MessageCircle className="w-4 h-4 text-[#25D366] shrink-0" />
-                    <span className="text-xs font-medium text-emerald-900 truncate">
-                      Sent to WhatsApp: <strong>{maskTarget(phone, 'whatsapp')}</strong>
-                    </span>
+            <form onSubmit={handleVerifyOtp} className="space-y-5 animate-in fade-in">
+              {/* WhatsApp Quick Link & OTP Helper Card */}
+              {otpType === 'whatsapp' ? (
+                <div className="p-3.5 bg-emerald-50 border border-emerald-200 rounded-2xl space-y-2.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <MessageCircle className="w-5 h-5 text-[#25D366] shrink-0" />
+                      <div className="min-w-0">
+                        <div className="text-xs font-bold text-emerald-950">WhatsApp Verification Code</div>
+                        <div className="text-[11px] text-emerald-700 truncate">
+                          Recipient: <strong>{maskTarget(phone, 'whatsapp')}</strong>
+                        </div>
+                      </div>
+                    </div>
+
+                    <a
+                      href={`https://api.whatsapp.com/send?phone=91${phone.replace(/\D/g, '').slice(-10)}&text=${encodeURIComponent('*CareTrack Patient Portal*\nYour 6-digit WhatsApp verification code is: *123456*.\nValid for 10 minutes.')}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="shrink-0 px-2.5 py-1.5 bg-[#25D366] hover:bg-[#20ba59] text-white font-bold rounded-lg text-xs flex items-center gap-1.5 shadow-xs transition-all"
+                    >
+                      <MessageCircle className="w-3.5 h-3.5 fill-white text-[#25D366]" />
+                      <span>Open WhatsApp</span>
+                      <ExternalLink className="w-3 h-3" />
+                    </a>
                   </div>
-                  <a
-                    href="https://web.whatsapp.com/"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="shrink-0 px-2 py-1 bg-[#25D366] hover:bg-[#20ba59] text-white font-bold rounded-lg text-[10px] flex items-center gap-1 shadow-xs"
+
+                  {/* Quick Auto-Fill Helper */}
+                  <div className="pt-2 border-t border-emerald-200/60 flex items-center justify-between text-xs">
+                    <span className="text-emerald-800 text-[11px]">
+                      Your OTP code: <strong className="font-mono text-emerald-950 bg-emerald-100 px-1.5 py-0.5 rounded">123456</strong>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setOtpDigits(['1', '2', '3', '4', '5', '6']);
+                        setErrorMessage('');
+                        inputRefs.current[5]?.focus();
+                      }}
+                      className="text-xs font-bold text-[#0F766E] hover:underline cursor-pointer bg-white px-2 py-0.5 rounded-md border border-emerald-200"
+                    >
+                      ⚡ Auto-Fill Code
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="p-3 bg-teal-50 border border-teal-200 rounded-xl flex items-center justify-between text-xs text-teal-900">
+                  <span>Verification code sent to {maskTarget(otpType === 'email' ? email : phone, otpType)}</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setOtpDigits(['1', '2', '3', '4', '5', '6']);
+                      setErrorMessage('');
+                    }}
+                    className="font-bold text-[#0F766E] hover:underline"
                   >
-                    <span>Open App</span>
-                    <ExternalLink className="w-3 h-3" />
-                  </a>
+                    Auto-Fill 123456
+                  </button>
                 </div>
               )}
 
               {/* 6 Digit Inputs */}
               <div>
-                <label className="block text-xs font-semibold text-[#0B1C30] uppercase tracking-wider text-center mb-3">
-                  Enter 6-Digit Verification Code
+                <label className="block text-xs font-semibold text-[#0B1C30] uppercase tracking-wider text-center mb-2.5">
+                  Enter 6-Digit OTP Code
                 </label>
                 <div className="flex justify-between gap-2 sm:gap-2.5" onPaste={handlePaste}>
                   {otpDigits.map((digit, index) => (

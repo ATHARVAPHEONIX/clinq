@@ -166,12 +166,57 @@ export default function VerifyOtp() {
 
       <div className="mt-6 sm:mx-auto sm:w-full sm:max-w-md px-4 sm:px-0">
         <div className="card shadow-lg border border-[#E2E8F0] p-6 sm:p-8">
-          {!isSupabaseConfigured && (
-            <div className="mb-6 p-3 bg-teal-50 border border-teal-200 rounded-xl text-xs text-teal-900 flex items-start gap-2">
-              <Sparkles className="w-4 h-4 text-[#0F766E] shrink-0 mt-0.5" />
-              <div>
-                <span className="font-semibold">Demo Sandbox:</span> Enter <code className="font-bold text-[#0F766E]">123456</code> to verify instantly.
+          {/* WhatsApp Direct Action & Auto-Fill Banner */}
+          {isWhatsApp ? (
+            <div className="mb-6 p-3.5 bg-emerald-50 border border-emerald-200 rounded-2xl space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <MessageCircle className="w-4 h-4 text-[#25D366] shrink-0" />
+                  <span className="text-xs font-semibold text-emerald-950 truncate">
+                    WhatsApp Code for {maskTarget(target, type)}
+                  </span>
+                </div>
+                <a
+                  href={`https://api.whatsapp.com/send?phone=91${target.replace(/\D/g, '').slice(-10)}&text=${encodeURIComponent('*CareTrack Patient Portal*\nYour 6-digit WhatsApp verification code is: *123456*.\nValid for 10 minutes.')}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-2.5 py-1 bg-[#25D366] hover:bg-[#20ba59] text-white font-bold rounded-lg text-[11px] flex items-center gap-1 shadow-xs"
+                >
+                  <span>Open WhatsApp</span>
+                  <ExternalLink className="w-3 h-3" />
+                </a>
               </div>
+
+              <div className="pt-2 border-t border-emerald-200/60 flex items-center justify-between text-xs">
+                <span className="text-emerald-800 text-[11px]">
+                  Verification OTP: <strong className="font-mono bg-emerald-100 px-1.5 py-0.5 rounded text-emerald-950">123456</strong>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setOtp(['1', '2', '3', '4', '5', '6']);
+                    setErrorMessage('');
+                    inputRefs.current[5]?.focus();
+                  }}
+                  className="text-xs font-bold text-[#0F766E] hover:underline cursor-pointer bg-white px-2 py-0.5 rounded-md border border-emerald-200"
+                >
+                  ⚡ Auto-Fill Code
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="mb-6 p-3 bg-teal-50 border border-teal-200 rounded-xl text-xs text-teal-900 flex items-center justify-between">
+              <span>Demo Sandbox OTP: <strong className="font-bold text-[#0F766E]">123456</strong></span>
+              <button
+                type="button"
+                onClick={() => {
+                  setOtp(['1', '2', '3', '4', '5', '6']);
+                  setErrorMessage('');
+                }}
+                className="font-bold text-[#0F766E] hover:underline"
+              >
+                Auto-Fill Code
+              </button>
             </div>
           )}
 
