@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useLocation, useNavigate, Link } from 'react-router-dom';
-import { ShieldCheck, ArrowLeft, RefreshCw, CheckCircle2, AlertCircle, UserPlus, Sparkles, MessageCircle, ExternalLink } from 'lucide-react';
+import { ShieldCheck, ArrowLeft, RefreshCw, CheckCircle2, AlertCircle, UserPlus, MessageCircle, Mail } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 
@@ -16,7 +16,7 @@ export default function VerifyOtp() {
   const [errorMessage, setErrorMessage] = useState('');
 
   const inputRefs = useRef([]);
-  const { verifyPhoneOtp, verifyWhatsAppOtp, verifyEmailOtp, loginWithPhone, loginWithWhatsApp, loginWithEmail, isSupabaseConfigured } = useAuth();
+  const { verifyWhatsAppOtp, verifyEmailOtp, loginWithWhatsApp, loginWithEmail } = useAuth();
   const { showSuccess, showError } = useToast();
 
   useEffect(() => {
@@ -31,8 +31,8 @@ export default function VerifyOtp() {
 
   const maskTarget = (val, targetType) => {
     if (!val) return '******';
-    if (targetType === 'phone' || targetType === 'whatsapp') {
-      const clean = val.replace(/\s+/g, '');
+    if (targetType === 'whatsapp') {
+      const clean = val.replace(/\D/g, '');
       return `+91 ******${clean.slice(-4)}`;
     }
     const [name, domain] = val.split('@');
@@ -86,15 +86,13 @@ export default function VerifyOtp() {
     try {
       if (type === 'whatsapp') {
         await verifyWhatsAppOtp(target, fullOtp);
-      } else if (type === 'phone') {
-        await verifyPhoneOtp(target, fullOtp);
       } else {
         await verifyEmailOtp(target, fullOtp);
       }
       showSuccess('Verification successful! Welcome to CareTrack.');
       navigate('/dashboard', { replace: true });
     } catch (err) {
-      const msg = err.message || 'Invalid or expired OTP. Please try again.';
+      const msg = err.message || 'Invalid OTP. Please check the OTP and try again.';
       setErrorMessage(msg);
       showError(msg);
     } finally {
@@ -109,8 +107,6 @@ export default function VerifyOtp() {
     try {
       if (type === 'whatsapp') {
         await loginWithWhatsApp(target);
-      } else if (type === 'phone') {
-        await loginWithPhone(target);
       } else {
         await loginWithEmail(target);
       }
@@ -137,88 +133,20 @@ export default function VerifyOtp() {
           <div className={`w-12 h-12 rounded-2xl flex items-center justify-center font-bold text-xl shadow-md ${
             isWhatsApp ? 'bg-[#25D366] text-white shadow-emerald-600/15' : 'bg-[#0F766E] text-white shadow-teal-900/10'
           }`}>
-            {isWhatsApp ? <MessageCircle className="w-7 h-7 fill-white" /> : <ShieldCheck className="w-7 h-7" />}
+            {isWhatsApp ? <MessageCircle className="w-7 h-7 fill-white" /> : <Mail className="w-7 h-7" />}
           </div>
         </div>
         <h2 className="text-center text-xl font-bold text-[#0B1C30]">
-          {isWhatsApp ? 'Verify WhatsApp OTP' : type === 'phone' ? 'Verify Mobile OTP' : 'Verify Email Address'}
+          {isWhatsApp ? 'Verify WhatsApp OTP' : 'Verify Email Address'}
         </h2>
         <p className="mt-1 text-center text-xs text-[#64748B]">
-          We&apos;ve sent a 6-digit verification code to {isWhatsApp ? 'your WhatsApp account' : 'your device'}:{' '}
+          We&apos;ve sent a 6-digit verification code to {isWhatsApp ? 'your WhatsApp account' : 'your email'}:{' '}
           <span className="font-semibold text-[#0B1C30]">{maskTarget(target, type)}</span>
         </p>
-
-        {isWhatsApp && (
-          <div className="mt-3 flex justify-center">
-            <a
-              href={`https://web.whatsapp.com/`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-full text-[11px] font-semibold transition-all"
-            >
-              <MessageCircle className="w-3.5 h-3.5 text-[#25D366]" />
-              <span>Open WhatsApp Web / App</span>
-              <ExternalLink className="w-3 h-3 text-emerald-600" />
-            </a>
-          </div>
-        )}
       </div>
 
       <div className="mt-6 sm:mx-auto sm:w-full sm:max-w-md px-4 sm:px-0">
         <div className="card shadow-lg border border-[#E2E8F0] p-6 sm:p-8">
-          {/* WhatsApp Direct Action & Auto-Fill Banner */}
-          {isWhatsApp ? (
-            <div className="mb-6 p-3.5 bg-emerald-50 border border-emerald-200 rounded-2xl space-y-2">
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2 min-w-0">
-                  <MessageCircle className="w-4 h-4 text-[#25D366] shrink-0" />
-                  <span className="text-xs font-semibold text-emerald-950 truncate">
-                    WhatsApp Code for {maskTarget(target, type)}
-                  </span>
-                </div>
-                <a
-                  href={`https://api.whatsapp.com/send?phone=91${target.replace(/\D/g, '').slice(-10)}&text=${encodeURIComponent('*CareTrack Patient Portal*\nYour 6-digit WhatsApp verification code is: *123456*.\nValid for 10 minutes.')}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="px-2.5 py-1 bg-[#25D366] hover:bg-[#20ba59] text-white font-bold rounded-lg text-[11px] flex items-center gap-1 shadow-xs"
-                >
-                  <span>Open WhatsApp</span>
-                  <ExternalLink className="w-3 h-3" />
-                </a>
-              </div>
-
-              <div className="pt-2 border-t border-emerald-200/60 flex items-center justify-between text-xs">
-                <span className="text-emerald-800 text-[11px]">
-                  Verification OTP: <strong className="font-mono bg-emerald-100 px-1.5 py-0.5 rounded text-emerald-950">123456</strong>
-                </span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setOtp(['1', '2', '3', '4', '5', '6']);
-                    setErrorMessage('');
-                    inputRefs.current[5]?.focus();
-                  }}
-                  className="text-xs font-bold text-[#0F766E] hover:underline cursor-pointer bg-white px-2 py-0.5 rounded-md border border-emerald-200"
-                >
-                  ⚡ Auto-Fill Code
-                </button>
-              </div>
-            </div>
-          ) : (
-            <div className="mb-6 p-3 bg-teal-50 border border-teal-200 rounded-xl text-xs text-teal-900 flex items-center justify-between">
-              <span>Verification OTP: <strong className="font-bold text-[#0F766E]">123456</strong></span>
-              <button
-                type="button"
-                onClick={() => {
-                  setOtp(['1', '2', '3', '4', '5', '6']);
-                  setErrorMessage('');
-                }}
-                className="font-bold text-[#0F766E] hover:underline cursor-pointer"
-              >
-                Auto-Fill Code
-              </button>
-            </div>
-          )}
 
           {/* Inline Error Banner */}
           {errorMessage && (
@@ -267,7 +195,7 @@ export default function VerifyOtp() {
             <div className="flex items-center justify-between text-xs">
               <Link to="/login" className="flex items-center gap-1 text-[#0F766E] hover:underline font-medium">
                 <ArrowLeft className="w-3.5 h-3.5" />
-                <span>Change {type === 'phone' ? 'Number' : 'Email'}</span>
+                <span>Change {type === 'whatsapp' ? 'Number' : 'Email'}</span>
               </Link>
 
               {canResend ? (

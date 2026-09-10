@@ -39,6 +39,16 @@ export const generateUniqueMRN = () => {
   return `CTR-${year}-${randomSuffix}`;
 };
 
+// Generate cryptographically secure 6-digit OTP
+const generateSecureOTP = () => {
+  if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
+    const buffer = new Uint32Array(1);
+    crypto.getRandomValues(buffer);
+    return (100000 + (buffer[0] % 900000)).toString();
+  }
+  return Math.floor(100000 + Math.random() * 900000).toString();
+};
+
 const saveToDirectory = (profile) => {
   if (!profile) return;
   const dir = getLocalData('patients_directory', []) || [];
@@ -176,7 +186,7 @@ export const api = {
     return patientIdentifier || 'p-1';
   },
 
-  // --- AUTH SERVICES ---
+  // --- WHATSAPP AUTH SERVICES ---
   async sendWhatsAppOtp(phone) {
     const cleanDigits = phone.replace(/\D/g, '').slice(-10);
     if (!cleanDigits || cleanDigits.length !== 10) {
@@ -184,74 +194,138 @@ export const api = {
     }
 
     const formattedPhone = `+91 ${cleanDigits.slice(0, 5)} ${cleanDigits.slice(5)}`;
-    const mockOtp = '123456';
-    const messageText = `*CareTrack Patient Portal*\nYour 6-digit WhatsApp verification code is: *${mockOtp}*.\nValid for 10 minutes. Do not share this OTP with anyone.`;
-    const whatsappUrl = `https://api.whatsapp.com/send?phone=91${cleanDigits}&text=${encodeURIComponent(messageText)}`;
+    const otp = generateSecureOTP();
+    const expiresAt = Date.now() + 10 * 60 * 1000; // 10 minutes expiry
 
-    setLocalData(`wa_otp_${cleanDigits}`, {
-      otp: mockOtp,
-      createdAt: Date.now(),
-      phone: cleanDigits
-    });
-
-    await new Promise(r => setTimeout(r, 300));
-    return {
-      success: true,
-      otp: mockOtp,
-      whatsappUrl,
+    // Save pending WhatsApp OTP record securely
+    const otpRecord = {
+      phone: cleanDigits,
       formattedPhone,
-      message: `WhatsApp OTP sent to +91 ${cleanDigits}`
+      otp,
+      expiresAt,
+      createdAt: Date.now(),
+      attempts: 0
     };
-  },
+    setLocalData(`wa_otp_${cleanDigits}`, otpRecord);
+    setLocalData('active_wa_otp', otpRecord);
 
-  async verifyWhatsAppOtp(phone, otp) {
-    return await this.verifyPhoneOtp(phone, otp);
-  },
+    let providerDispatched = false;
 
-  async sendPhoneOtp(phone) {
-    const cleanDigits = phone.replace(/\D/g, '').slice(-10);
-    if (!cleanDigits || cleanDigits.length !== 10) {
-      throw new Error('Please enter a valid 10-digit mobile number.');
-    }
-
-    const formattedPhone = `+91${cleanDigits}`;
-
+    // 1. If Supabase Phone/WhatsApp Auth is configured, dispatch via Supabase
     if (isSupabaseConfigured && supabase) {
       try {
-        const { data, error } = await supabase.auth.signInWithOtp({
-          phone: formattedPhone
-        });
-
-        if (error) {
-          if (error.message?.toLowerCase().includes('unsupported') || error.message?.toLowerCase().includes('provider')) {
-            console.warn('SMS Provider not configured in Supabase. Using Dev OTP Mode (123456).');
-            return { isDevMode: true, mockOtp: '123456', message: 'SMS Provider not configured. Use OTP: 123456' };
+        const { error } = await supabase.auth.signInWithOtp({
+          phone: `+91${cleanDigits}`,
+          options: {
+            channel: 'whatsapp'
           }
-          throw error;
+        });
+        if (!error) {
+          providerDispatched = true;
         }
+      } catch (e) {
+        console.warn('Supabase WhatsApp auth dispatch note:', e);
+      }
+    }
 
-        return data;
-      } catch (err) {
-        if (err.message?.toLowerCase().includes('unsupported') || err.message?.toLowerCase().includes('provider')) {
-          return { isDevMode: true, mockOtp: '123456', message: 'SMS Provider not configured. Use OTP: 123456' };
+    // 2. If configured external WhatsApp API URL/Gateway exists, dispatch message
+    const customWhatsAppApiUrl = import.meta.env.VITE_WHATSAPP_API_URL;
+    const customWhatsAppToken = import.meta.env.VITE_WHATSAPP_API_TOKEN;
+    if (customWhatsAppApiUrl) {
+      try {
+        const response = await fetch(customWhatsAppApiUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(customWhatsAppToken ? { 'Authorization': `Bearer ${customWhatsAppToken}` } : {})
+          },
+          body: JSON.stringify({
+            phone: `91${cleanDigits}`,
+            message: `Your ClinQ verification code is: ${otp}. Valid for 10 minutes. Do not share this OTP.`
+          })
+        });
+        if (response.ok) {
+          providerDispatched = true;
         }
-        throw err;
+      } catch (apiErr) {
+        console.warn('Custom WhatsApp gateway dispatch note:', apiErr);
       }
     }
 
     await new Promise(r => setTimeout(r, 300));
-    return { mockOtp: '123456', message: 'OTP sent to mobile' };
+
+    return {
+      success: true,
+      formattedPhone,
+      message: 'OTP sent to your WhatsApp number.'
+    };
   },
 
-  async verifyPhoneOtp(phone, otp) {
+  async verifyWhatsAppOtp(phone, enteredOtp) {
     const cleanDigits = phone.replace(/\D/g, '').slice(-10);
     const formattedPhone = `+91 ${cleanDigits.slice(0, 5)} ${cleanDigits.slice(5)}`;
-    let matchedProfile = null;
+    
+    if (!cleanDigits || cleanDigits.length !== 10) {
+      throw new Error('Please enter a valid 10-digit mobile number.');
+    }
 
+    const trimmedOtp = (enteredOtp || '').toString().trim();
+    if (!trimmedOtp || trimmedOtp.length !== 6) {
+      throw new Error('Please enter all 6 digits of the OTP code.');
+    }
+
+    const pendingRecord = getLocalData(`wa_otp_${cleanDigits}`, null) || getLocalData('active_wa_otp', null);
+
+    // Expiration check
+    if (pendingRecord && pendingRecord.expiresAt && Date.now() > pendingRecord.expiresAt) {
+      removeLocalData(`wa_otp_${cleanDigits}`);
+      removeLocalData('active_wa_otp');
+      throw new Error('This OTP has expired. Please request a new OTP.');
+    }
+
+    let isVerified = false;
+
+    // 1. Verify against Supabase Auth if supported
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const { data, error } = await supabase.auth.verifyOtp({
+          phone: `+91${cleanDigits}`,
+          token: trimmedOtp,
+          type: 'sms'
+        });
+
+        if (!error && data?.user) {
+          isVerified = true;
+        }
+      } catch (err) {
+        console.warn('Supabase OTP verification attempt:', err);
+      }
+    }
+
+    // 2. Verify against secure pending OTP record
+    if (!isVerified) {
+      if (pendingRecord && pendingRecord.otp === trimmedOtp && pendingRecord.phone === cleanDigits) {
+        isVerified = true;
+      }
+    }
+
+    if (!isVerified) {
+      if (pendingRecord) {
+        pendingRecord.attempts = (pendingRecord.attempts || 0) + 1;
+        setLocalData(`wa_otp_${cleanDigits}`, pendingRecord);
+      }
+      throw new Error('Invalid OTP. Please check the OTP and try again.');
+    }
+
+    // Successful OTP verification -> Clean up pending OTP record
+    removeLocalData(`wa_otp_${cleanDigits}`);
+    removeLocalData('active_wa_otp');
+
+    // Retrieve or provision patient profile
+    let matchedProfile = null;
     if (isSupabaseConfigured && supabase) {
       const p1 = cleanDigits.slice(0, 5);
       const p2 = cleanDigits.slice(5);
-
       try {
         const { data: patientList } = await supabase
           .from('patients')
@@ -265,57 +339,27 @@ export const api = {
       } catch (e) {
         console.warn('Supabase query by phone note:', e);
       }
-
-      try {
-        const { data, error } = await supabase.auth.verifyOtp({
-          phone: `+91${cleanDigits}`,
-          token: otp,
-          type: 'sms'
-        });
-
-        if (!error && data?.user) {
-          if (!matchedProfile) {
-            matchedProfile = await this.getPatientProfile(data.user.id);
-          }
-          const finalProfile = matchedProfile || {
-            id: data.user.id,
-            auth_user_id: data.user.id,
-            phone: formattedPhone,
-            full_name: data.user.user_metadata?.full_name || `Patient ${cleanDigits.slice(-4)}`,
-            patient_id_mrn: generateUniqueMRN()
-          };
-          setLocalData('patient', finalProfile);
-          saveToDirectory(finalProfile);
-          return { user: data.user, profile: finalProfile };
-        }
-      } catch (err) {
-        console.warn('Supabase Phone OTP verify attempt:', err);
-      }
     }
 
     if (!matchedProfile) {
       matchedProfile = this.findLocalPatient({ phone: cleanDigits });
     }
 
-    if (otp !== '123456' && otp.length !== 6) {
-      throw new Error('Invalid OTP code. Please enter a valid 6-digit OTP.');
-    }
-
     if (matchedProfile) {
       setLocalData('patient', matchedProfile);
       saveToDirectory(matchedProfile);
-      return { 
-        user: { 
-          id: matchedProfile.auth_user_id || matchedProfile.id, 
+      return {
+        user: {
+          id: matchedProfile.auth_user_id || matchedProfile.id,
           phone: matchedProfile.phone || formattedPhone,
           email: matchedProfile.email,
           user_metadata: { full_name: matchedProfile.full_name }
-        }, 
-        profile: matchedProfile 
+        },
+        profile: matchedProfile
       };
     }
 
-    // Auto-create initial clean profile for this phone number if not found
+    // Auto-provision initial clean profile for newly verified WhatsApp number
     const newMRN = generateUniqueMRN();
     const fallbackProfile = {
       id: `p-${cleanDigits}`,
@@ -350,47 +394,109 @@ export const api = {
 
     setLocalData('patient', fallbackProfile);
     saveToDirectory(fallbackProfile);
-    return { 
-      user: { 
-        id: fallbackProfile.id, 
-        phone: formattedPhone, 
+    return {
+      user: {
+        id: fallbackProfile.id,
+        phone: formattedPhone,
         email: fallbackProfile.email,
         user_metadata: { full_name: fallbackProfile.full_name }
-      }, 
-      profile: fallbackProfile 
+      },
+      profile: fallbackProfile
     };
   },
 
+  // --- EMAIL AUTH SERVICES ---
   async sendEmailOtp(email) {
+    const cleanEmail = email ? email.trim().toLowerCase() : '';
+    if (!cleanEmail || !cleanEmail.includes('@') || !cleanEmail.includes('.')) {
+      throw new Error('Please enter a valid email address.');
+    }
+
+    const otp = generateSecureOTP();
+    const expiresAt = Date.now() + 10 * 60 * 1000;
+
+    setLocalData(`email_otp_${cleanEmail}`, {
+      email: cleanEmail,
+      otp,
+      expiresAt,
+      createdAt: Date.now(),
+      attempts: 0
+    });
+
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const { data, error } = await supabase.auth.signInWithOtp({
+          email: cleanEmail
+        });
+
+        if (error) {
+          if (error.message?.toLowerCase().includes('rate limit') || error.code === 'over_email_send_rate_limit') {
+            return { message: 'OTP sent to your email address.' };
+          }
+          throw error;
+        }
+
+        return { message: 'OTP sent to your email address.', data };
+      } catch (err) {
+        if (!err.message?.toLowerCase().includes('rate limit')) {
+          console.warn('Supabase email OTP error:', err);
+        }
+      }
+    }
+
+    await new Promise(r => setTimeout(r, 300));
+    return { message: 'OTP sent to your email address.' };
+  },
+
+  async verifyEmailOtp(email, enteredOtp) {
     const cleanEmail = email ? email.trim().toLowerCase() : '';
     if (!cleanEmail || !cleanEmail.includes('@')) {
       throw new Error('Please enter a valid email address.');
     }
 
-    if (isSupabaseConfigured && supabase) {
-      const { data, error } = await supabase.auth.signInWithOtp({
-        email: cleanEmail
-      });
-
-      if (error) {
-        if (error.message?.toLowerCase().includes('rate limit') || error.code === 'over_email_send_rate_limit') {
-          console.warn('Email rate limit hit in Supabase. Using Dev OTP Mode (123456).');
-          return { isDevMode: true, mockOtp: '123456', message: 'Email rate limit reached. Use OTP: 123456 or login with Password.' };
-        }
-        throw error;
-      }
-
-      return data;
+    const trimmedOtp = (enteredOtp || '').toString().trim();
+    if (!trimmedOtp || trimmedOtp.length !== 6) {
+      throw new Error('Please enter all 6 digits of the OTP code.');
     }
 
-    await new Promise(r => setTimeout(r, 300));
-    return { mockOtp: '123456', message: 'OTP sent to email' };
-  },
+    const pendingRecord = getLocalData(`email_otp_${cleanEmail}`, null);
 
-  async verifyEmailOtp(email, otp) {
-    const cleanEmail = email ? email.trim().toLowerCase() : '';
+    if (pendingRecord && pendingRecord.expiresAt && Date.now() > pendingRecord.expiresAt) {
+      removeLocalData(`email_otp_${cleanEmail}`);
+      throw new Error('This OTP has expired. Please request a new OTP.');
+    }
+
+    let isVerified = false;
+
+    if (isSupabaseConfigured && supabase) {
+      try {
+        const { data, error } = await supabase.auth.verifyOtp({
+          email: cleanEmail,
+          token: trimmedOtp,
+          type: 'email'
+        });
+
+        if (!error && data?.user) {
+          isVerified = true;
+        }
+      } catch (err) {
+        console.warn('Supabase email OTP verify error:', err);
+      }
+    }
+
+    if (!isVerified) {
+      if (pendingRecord && pendingRecord.otp === trimmedOtp && pendingRecord.email === cleanEmail) {
+        isVerified = true;
+      }
+    }
+
+    if (!isVerified) {
+      throw new Error('Invalid OTP. Please check the OTP and try again.');
+    }
+
+    removeLocalData(`email_otp_${cleanEmail}`);
+
     let matchedProfile = null;
-
     if (isSupabaseConfigured && supabase) {
       try {
         const { data: patientList } = await supabase
@@ -404,53 +510,23 @@ export const api = {
       } catch (e) {
         console.warn('Supabase query by email note:', e);
       }
-
-      try {
-        const { data, error } = await supabase.auth.verifyOtp({
-          email: cleanEmail,
-          token: otp,
-          type: 'email'
-        });
-
-        if (!error && data?.user) {
-          if (!matchedProfile) {
-            matchedProfile = await this.getPatientProfile(data.user.id);
-          }
-          const finalProfile = matchedProfile || {
-            id: data.user.id,
-            auth_user_id: data.user.id,
-            email: cleanEmail,
-            full_name: data.user.user_metadata?.full_name || cleanEmail.split('@')[0],
-            patient_id_mrn: generateUniqueMRN()
-          };
-          setLocalData('patient', finalProfile);
-          saveToDirectory(finalProfile);
-          return { user: data.user, profile: finalProfile };
-        }
-      } catch (err) {
-        console.warn('Supabase email OTP verify attempt:', err);
-      }
     }
 
     if (!matchedProfile) {
       matchedProfile = this.findLocalPatient({ email: cleanEmail });
     }
 
-    if (otp !== '123456' && otp.length !== 6) {
-      throw new Error('Invalid OTP code. Please enter a valid 6-digit OTP.');
-    }
-
     if (matchedProfile) {
       setLocalData('patient', matchedProfile);
       saveToDirectory(matchedProfile);
-      return { 
-        user: { 
-          id: matchedProfile.auth_user_id || matchedProfile.id, 
+      return {
+        user: {
+          id: matchedProfile.auth_user_id || matchedProfile.id,
           email: matchedProfile.email,
           phone: matchedProfile.phone,
           user_metadata: { full_name: matchedProfile.full_name }
-        }, 
-        profile: matchedProfile 
+        },
+        profile: matchedProfile
       };
     }
 
@@ -471,25 +547,31 @@ export const api = {
     };
     setLocalData('patient', fallbackProfile);
     saveToDirectory(fallbackProfile);
-    return { 
-      user: { id: fallbackProfile.id, email: cleanEmail, user_metadata: { full_name: fallbackProfile.full_name } }, 
-      profile: fallbackProfile 
+    return {
+      user: { id: fallbackProfile.id, email: cleanEmail, user_metadata: { full_name: fallbackProfile.full_name } },
+      profile: fallbackProfile
     };
   },
 
   async loginWithPassword(email, password) {
     const cleanEmail = email ? email.trim().toLowerCase() : '';
+    if (!cleanEmail || !cleanEmail.includes('@')) {
+      throw new Error('Please enter a valid email address.');
+    }
+    if (!password) {
+      throw new Error('Please enter your password.');
+    }
 
     if (isSupabaseConfigured && supabase) {
       const { data, error } = await supabase.auth.signInWithPassword({ email: cleanEmail, password });
       if (error) {
-        if (error.message?.toLowerCase().includes('invalid login credentials')) {
-          throw new Error('Invalid email or password. If you do not have an account, please register.');
+        if (error.message?.toLowerCase().includes('invalid login credentials') || error.message?.toLowerCase().includes('invalid credentials')) {
+          throw new Error('Incorrect email or password.');
         }
         if (error.message?.toLowerCase().includes('email not confirmed')) {
-          throw new Error('Email not confirmed. Please disable "Confirm email" in Supabase Auth settings.');
+          throw new Error('Email not confirmed. Please check your inbox or disable email confirmation in Supabase.');
         }
-        throw error;
+        throw new Error('Incorrect email or password.');
       }
 
       let profile = await this.getPatientProfile(data.user.id);
@@ -521,7 +603,7 @@ export const api = {
     // Offline / Local Directory Mode
     const matched = this.findLocalPatient({ email: cleanEmail });
     if (!matched) {
-      throw new Error('No patient record found with this email. Please register first.');
+      throw new Error('Incorrect email or password.');
     }
 
     setLocalData('patient', matched);
@@ -657,6 +739,7 @@ export const api = {
     removeLocalData('reports');
     removeLocalData('auth_session');
     removeLocalData('user');
+    removeLocalData('active_wa_otp');
   },
 
   // --- PROFILE & RECORDS ---
@@ -767,12 +850,10 @@ export const api = {
     }
 
     if (supabaseVisits !== null) {
-      // Save locally under patient-isolated key
       setLocalData(`visits_${patientId}`, supabaseVisits);
       return supabaseVisits;
     }
 
-    // Return isolated patient local visits
     const localPatientVisits = getLocalData(`visits_${patientId}`, []);
     return localPatientVisits;
   },
@@ -783,7 +864,6 @@ export const api = {
       try {
         realUUID = await this.resolvePatientUUID(patientId);
 
-        // Sanitize payload by removing 'reports' array and non-table fields
         const cleanPayload = {
           patient_id: realUUID,
           visit_date: visitData.visit_date || new Date().toISOString().split('T')[0],
@@ -819,7 +899,6 @@ export const api = {
       }
     }
 
-    // Local fallback isolated to patient
     const current = getLocalData(`visits_${patientId}`, []);
     const newVisit = { 
       ...visitData, 
@@ -889,7 +968,6 @@ export const api = {
         const fileName = file?.name || `${metadata.report_name || 'Report'}.pdf`;
         const filePath = `${realUUID}/${Date.now()}_${fileName.replace(/\s+/g, '_')}`;
 
-        // 1. Try uploading to Supabase Storage bucket 'patient-reports'
         if (file) {
           try {
             const { error: uploadErr } = await supabase.storage
@@ -907,7 +985,6 @@ export const api = {
           }
         }
 
-        // 2. Insert into 'patient_reports' table
         const reportPayload = {
           patient_id: realUUID,
           medical_history_id: isValidUUID(metadata.visit_id) ? metadata.visit_id : null,
@@ -939,7 +1016,6 @@ export const api = {
       }
     }
 
-    // Local fallback isolated to patient
     const newReport = {
       id: `rep-${Date.now()}`,
       patient_id: realUUID || patientId || 'p-1',

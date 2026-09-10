@@ -70,11 +70,6 @@ export const AuthProvider = ({ children }) => {
     initAuth();
   }, []);
 
-  const loginWithPhone = async (phone) => {
-    setAuthError(null);
-    return await api.sendPhoneOtp(phone);
-  };
-
   const loginWithWhatsApp = async (phone) => {
     setAuthError(null);
     return await api.sendWhatsAppOtp(phone);
@@ -91,20 +86,6 @@ export const AuthProvider = ({ children }) => {
     return res;
   };
 
-  const verifyPhoneOtp = async (phone, otp) => {
-    setAuthError(null);
-    const res = await api.verifyPhoneOtp(phone, otp);
-    
-    // Always persist authentication state
-    localStorage.setItem('caretrack_auth_session', 'true');
-    const profile = res.profile || (await api.getPatientProfile(res.user?.id));
-    const activeUser = res.user || { id: profile?.auth_user_id || 'phone-user', phone };
-    
-    setUser(activeUser);
-    setPatient(profile);
-    return res;
-  };
-
   const loginWithEmail = async (email) => {
     setAuthError(null);
     return await api.sendEmailOtp(email);
@@ -113,11 +94,9 @@ export const AuthProvider = ({ children }) => {
   const verifyEmailOtp = async (email, otp) => {
     setAuthError(null);
     const res = await api.verifyEmailOtp(email, otp);
-    
     localStorage.setItem('caretrack_auth_session', 'true');
     const profile = res.profile || (await api.getPatientProfile(res.user?.id));
     const activeUser = res.user || { id: profile?.auth_user_id || 'email-user', email };
-    
     setUser(activeUser);
     setPatient(profile);
     return res;
@@ -126,11 +105,9 @@ export const AuthProvider = ({ children }) => {
   const loginWithPassword = async (email, password) => {
     setAuthError(null);
     const res = await api.loginWithPassword(email, password);
-    
     localStorage.setItem('caretrack_auth_session', 'true');
     const profile = res.profile || (await api.getPatientProfile(res.user?.id));
     const activeUser = res.user || { id: profile?.auth_user_id || 'email-user', email };
-    
     setUser(activeUser);
     setPatient(profile);
     return res;
@@ -138,7 +115,6 @@ export const AuthProvider = ({ children }) => {
 
   const register = async (formData) => {
     setAuthError(null);
-    // Clear any prior cached local session
     localStorage.removeItem('caretrack_auth_session');
     localStorage.removeItem('caretrack_patient');
     
@@ -182,9 +158,7 @@ export const AuthProvider = ({ children }) => {
         loading,
         authError,
         isSupabaseConfigured,
-        loginWithPhone,
         loginWithWhatsApp,
-        verifyPhoneOtp,
         verifyWhatsAppOtp,
         loginWithEmail,
         verifyEmailOtp,

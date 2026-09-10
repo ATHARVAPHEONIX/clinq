@@ -136,8 +136,8 @@ export default function Settings() {
 
           <div className="flex items-center justify-between py-2">
             <div>
-              <h4 className="font-semibold text-xs text-[#0B1C30]">SMS One-Time Passcodes</h4>
-              <p className="text-xs text-[#64748B]">Require an OTP code sent to your registered phone on every new login.</p>
+              <h4 className="font-semibold text-xs text-[#0B1C30]">WhatsApp Two-Factor Verification</h4>
+              <p className="text-xs text-[#64748B]">Require an OTP code sent to your registered WhatsApp number on every new login.</p>
             </div>
             <button
               onClick={() => {
